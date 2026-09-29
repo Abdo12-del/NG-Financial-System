@@ -9,20 +9,26 @@ import {
   PlusCircle,
   Users,
   CheckCircle2,
-  Key,
+  Server,
+  Package,
+  HardDrive,
+  FolderDown,
+  FileCode,
   ShieldCheck,
-  Server
+  ExternalLink
 } from 'lucide-react';
 import { apiRequest } from '../utils/api';
 import Modal from '../components/Modal';
 
 export default function Settings() {
   const [settings, setSettings] = useState({});
-  const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [users, setUsers] = useState([]);
   const [dbEngine, setDbEngine] = useState('sqlite');
   const [loading, setLoading] = useState(true);
+
+  // Active settings subtab
+  const [settingsTab, setSettingsTab] = useState('general'); // 'general', 'database', 'installer', 'categories', 'users'
 
   // MariaDB Connection Test
   const [mariaConfig, setMariaConfig] = useState({
@@ -35,15 +41,11 @@ export default function Settings() {
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
 
-  // Expense Category modal
+  // Modals
   const [isAddCatOpen, setIsAddCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
-
-  // User modal
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', fullName: '', role: 'viewer' });
-
-  // Restore Modal
   const [isRestoreOpen, setIsRestoreOpen] = useState(false);
   const [restoreFile, setRestoreFile] = useState(null);
   const [restoring, setRestoring] = useState(false);
@@ -53,7 +55,6 @@ export default function Settings() {
       setLoading(true);
       const res = await apiRequest('/settings');
       setSettings(res.settings || {});
-      setAccounts(res.accounts || []);
       setCategories(res.categories || []);
       setDbEngine(res.currentDbEngine || 'sqlite');
 
@@ -67,7 +68,6 @@ export default function Settings() {
         });
       }
 
-      // Fetch users
       const usersRes = await apiRequest('/auth/users').catch(() => ({ users: [] }));
       setUsers(usersRes.users || []);
     } catch (err) {
@@ -177,40 +177,127 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in duration-300">
+    <div className="p-8 space-y-6">
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold text-slate-800 text-base">إعدادات النظام وقاعدة البيانات المحلية</h3>
-          <p className="text-xs text-slate-500">تهيئة خادم MariaDB 10.11.7 Winx64 والنسخ الاحتياطي والصلاحيات</p>
+          <h3 className="font-bold text-slate-800 text-base">إعدادات النظام وملفات التثبيت الاحترافية</h3>
+          <p className="text-xs text-slate-500">تهيئة خادم MariaDB 10.11.7، ملفات التثبيت (Setup Wizard)، والنسخ الاحتياطي</p>
         </div>
 
         <button
           onClick={handleSaveSettings}
-          className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gradient-to-r from-[#38B6FF] to-[#0BAAFF] hover:from-[#0BAAFF] hover:to-[#0288d1] text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0BAAFF] hover:bg-[#0099FF] text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
         >
           <Save className="w-4 h-4" />
-          <span>حفظ جميع الإعدادات</span>
+          <span>حفظ التغييرات</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 1. MariaDB 10.11.7 Local Configuration */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+      {/* Tabs */}
+      <div className="flex items-center gap-2 p-1 bg-slate-200/70 rounded-xl text-xs font-bold w-fit">
+        <button
+          onClick={() => setSettingsTab('general')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'general' ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}
+        >
+          الإعدادات العامة والعملة
+        </button>
+        <button
+          onClick={() => setSettingsTab('database')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'database' ? 'bg-white shadow-xs text-[#0BAAFF]' : 'text-slate-600'}`}
+        >
+          خادم MariaDB 10.11.7
+        </button>
+        <button
+          onClick={() => setSettingsTab('installer')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'installer' ? 'bg-white shadow-xs text-indigo-600' : 'text-slate-600'}`}
+        >
+          <Package className="w-3.5 h-3.5 text-indigo-500" />
+          <span>ملفات التثبيت (Installer & Setup)</span>
+        </button>
+        <button
+          onClick={() => setSettingsTab('backup')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'backup' ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}
+        >
+          النسخ الاحتياطي والاستعادة
+        </button>
+        <button
+          onClick={() => setSettingsTab('categories')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'categories' ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}
+        >
+          تصنيفات المصروفات
+        </button>
+        <button
+          onClick={() => setSettingsTab('users')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'users' ? 'bg-white shadow-xs text-purple-700' : 'text-slate-600'}`}
+        >
+          المستخدمون والصلاحيات
+        </button>
+      </div>
+
+      {/* TAB 1: General Preferences */}
+      {settingsTab === 'general' && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-2xl">
+          <h4 className="font-bold text-slate-800 text-sm pb-2 border-b border-slate-100">
+            تفضيلات الأكاديمية والعملة
+          </h4>
+
+          <div className="space-y-4 text-xs">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">اسم الأكاديمية الرسمي</label>
+              <input
+                type="text"
+                value={settings.academy_name || 'NG Academy'}
+                onChange={(e) => setSettings({ ...settings, academy_name: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">رمز العملة الرسمية</label>
+              <input
+                type="text"
+                value={settings.currency_code || 'DZD'}
+                onChange={(e) => setSettings({ ...settings, currency_code: e.target.value })}
+                placeholder="DZD"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">العملة الافتراضية المعتمدة لجميع القيود والتقارير</p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+              <div>
+                <span className="font-bold text-slate-800 block text-xs">السماح بالدفع الزائد (Overpayment Policy)</span>
+                <span className="text-[11px] text-slate-400">السماح بتسجيل دفعات تتجاوز السعر المتفق عليه للطالب</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.allow_overpayment === 'true'}
+                onChange={(e) => setSettings({ ...settings, allow_overpayment: e.target.checked ? 'true' : 'false' })}
+                className="w-5 h-5 rounded-md accent-[#0BAAFF] cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: MariaDB 10.11.7 Local Server */}
+      {settingsTab === 'database' && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-2xl">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <Server className="w-5 h-5 text-[#38B6FF]" />
+              <Server className="w-5 h-5 text-[#0BAAFF]" />
               <h4 className="font-bold text-slate-800 text-sm">إعدادات خادم MariaDB 10.11.7 المحلي</h4>
             </div>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
               dbEngine === 'mariadb' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
             }`}>
-              {dbEngine === 'mariadb' ? 'متصل بـ MariaDB' : 'وضع المعاينة المدمج'}
+              {dbEngine === 'mariadb' ? 'متصل بـ MariaDB محلياً' : 'وضع المعاينة المدمج'}
             </span>
           </div>
 
           <p className="text-xs text-slate-500">
-            يعمل النظام أوفلاين بالكامل مع قاعدة بيانات MariaDB المثبتة محليًا على جهاز Windows بدون الحاجة لأي إنترنت.
+            يعمل النظام أوفلاين بالكامل مع قاعدة بيانات MariaDB المثبتة محليًا على جهاز Windows بدون الحاجة للإنترنت.
           </p>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
@@ -220,8 +307,8 @@ export default function Settings() {
                 type="text"
                 value={mariaConfig.host}
                 onChange={(e) => setMariaConfig({ ...mariaConfig, host: e.target.value })}
-                placeholder="localhost أو 127.0.0.1"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
+                placeholder="localhost"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
               />
             </div>
             <div>
@@ -231,30 +318,30 @@ export default function Settings() {
                 value={mariaConfig.port}
                 onChange={(e) => setMariaConfig({ ...mariaConfig, port: e.target.value })}
                 placeholder="3306"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">اسم قاعدة البيانات (Database)</label>
+              <label className="block font-bold text-slate-700 mb-1">اسم قاعدة البيانات</label>
               <input
                 type="text"
                 value={mariaConfig.database}
                 onChange={(e) => setMariaConfig({ ...mariaConfig, database: e.target.value })}
                 placeholder="ng_financial"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">اسم المستخدم (User)</label>
+              <label className="block font-bold text-slate-700 mb-1">اسم المستخدم</label>
               <input
                 type="text"
                 value={mariaConfig.user}
                 onChange={(e) => setMariaConfig({ ...mariaConfig, user: e.target.value })}
                 placeholder="root"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
               />
             </div>
           </div>
@@ -266,7 +353,7 @@ export default function Settings() {
               value={mariaConfig.password}
               onChange={(e) => setMariaConfig({ ...mariaConfig, password: e.target.value })}
               placeholder="••••••••"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
             />
           </div>
 
@@ -302,9 +389,165 @@ export default function Settings() {
             </div>
           )}
         </div>
+      )}
 
-        {/* 2. Backup & Restore (Requirement 21) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+      {/* TAB 3: Professional Installer & Distribution (NEW!) */}
+      {settingsTab === 'installer' && (
+        <div className="space-y-6">
+          <div className="p-4.5 bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-100 rounded-2xl flex items-start gap-3.5">
+            <div className="p-2.5 bg-white rounded-xl shadow-2xs text-[#0BAAFF]">
+              <Package className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-slate-900 text-sm">حزم التثبيت والتوزيع المكتبي (Professional Desktop Packaging)</h4>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                تم تجهيز نظام NG Financial System بحزم تثبيت متكاملة تحاكي كبرى برامج الأعمال العالمية (Setup Wizard .exe)،
+                بما يضمن التثبيت بنقرة واحدة، إنشاء اختصارات سطح المكتب، وتهيئة قاعدة بيانات MariaDB 10.11.7 تلقائياً.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Installer 1: Inno Setup & Windows Installer (.exe) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-sky-100 text-[#0BAAFF] flex items-center justify-center font-bold">
+                    <FileCode className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-slate-900 text-sm">مثبت الإعداد الرسمي (Inno Setup Script)</h5>
+                    <span className="text-[10px] text-slate-400 font-mono">NG-Financial-System-Setup.exe</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+                  سكربت تثبيت احترافي مبني بأداة Inno Setup العالمية لإنشاء ملف تنفيذي قياسي لويندوز مع دعم اللغتين العربية والإنجليزية.
+                </p>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 text-[11px] text-slate-600 mb-4">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>واجهة تثبيت عربية بالكامل مع الشعار الرسمي</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>إنشاء اختصار سطح المكتب وقائمة ابدأ (Desktop & Start Menu)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>إنشاء قاعدة بيانات ng_financial تلقائياً أثناء التثبيت</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>إلغاء تثبيت نظيف مسجل في لوحة تحكم ويندوز (Control Panel)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="font-mono text-slate-400">installer/NG-Financial-System.iss</span>
+                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">جاهز للبناء</span>
+              </div>
+            </div>
+
+            {/* Installer 2: Interactive Batch Wizard (One-Click Setup) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                    <HardDrive className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-slate-900 text-sm">المثبت التفاعلي الفوري (Native Windows Wizard)</h5>
+                    <span className="text-[10px] text-slate-400 font-mono">Install-NG-Financial-System.bat</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+                  معالج تثبيت فوري يعمل بنقرة واحدة على أي جهاز ويندوز دون الحاجة لبرامج خارجية:
+                </p>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 text-[11px] text-slate-600 mb-4">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>طلب صلاحيات المسؤول تلقائياً (UAC Elevation)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>نسخ الملفات إلى مسار C:\Program Files\NG Financial System</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>فحص وتفعيل خدمة MariaDB محلياً واستيراد schema.sql</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>إنشاء اختصار سطح المكتب عبر Windows Script Host</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="font-mono text-slate-400">installer/Install-NG-Financial-System.bat</span>
+                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">جاهز للتشغيل</span>
+              </div>
+            </div>
+
+            {/* Installer 3: Portable Edition */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center font-bold">
+                    <FolderDown className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-slate-900 text-sm">النسخة المحمولة (Portable Edition)</h5>
+                    <span className="text-[10px] text-slate-400 font-mono">Build-Portable.bat</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+                  حزمة تشغيل فورية تعمل من الفلاش ديسك (USB) أو أي مجلد دون تثبيت في نظام ويندوز، مع قاعدة بيانات محلية ذاتية التضمين.
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="font-mono text-slate-400">installer/Build-Portable.bat</span>
+                <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-bold text-[10px]">محمول Offline</span>
+              </div>
+            </div>
+
+            {/* Installer 4: Windows Command Launcher */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
+                    <FileCode className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-slate-900 text-sm">مشغل ويندوز المحلي (Windows Launcher)</h5>
+                    <span className="text-[10px] text-slate-400 font-mono">scripts/run-windows.bat</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+                  ملف تشغيل سريع يطلق خادم النظام المكتبي على جهاز ويندوز ويفتح النافذة الرئيسية فورياً.
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="font-mono text-slate-400">scripts/run-windows.bat</span>
+                <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-bold text-[10px]">مشغل سريع</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: Backup & Restore */}
+      {settingsTab === 'backup' && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-2xl">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
             <Database className="w-5 h-5 text-indigo-600" />
             <h4 className="font-bold text-slate-800 text-sm">النسخ الاحتياطي والاستعادة (Backup & Restore)</h4>
@@ -344,57 +587,16 @@ export default function Settings() {
             </div>
           </div>
         </div>
+      )}
 
-        {/* 3. General Academy & Financial Preferences */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-          <h4 className="font-bold text-slate-800 text-sm pb-2 border-b border-slate-100">
-            تفضيلات الأكاديمية والعملة
-          </h4>
-
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">اسم الأكاديمية</label>
-              <input
-                type="text"
-                value={settings.academy_name || 'NG Academy'}
-                onChange={(e) => setSettings({ ...settings, academy_name: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">رمز العملة الرسمية</label>
-              <input
-                type="text"
-                value={settings.currency_code || 'DZD'}
-                onChange={(e) => setSettings({ ...settings, currency_code: e.target.value })}
-                placeholder="DZD"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono"
-              />
-            </div>
-
-            <div className="pt-2 flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <div>
-                <span className="font-bold text-slate-800 block text-xs">السماح بالدفع الزائد (Overpayment)</span>
-                <span className="text-[11px] text-slate-400">السماح بتسجيل دفعات أكبر من السعر المستحق</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.allow_overpayment === 'true'}
-                onChange={(e) => setSettings({ ...settings, allow_overpayment: e.target.checked ? 'true' : 'false' })}
-                className="w-5 h-5 rounded-md accent-[#38B6FF] cursor-pointer"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 4. Expense Categories Management (Requirement 5) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+      {/* TAB 5: Categories */}
+      {settingsTab === 'categories' && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-2xl">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <h4 className="font-bold text-slate-800 text-sm">تصنيفات المصروفات التشغيلية</h4>
             <button
               onClick={() => setIsAddCatOpen(true)}
-              className="px-2.5 py-1 text-xs bg-[#38B6FF]/10 text-[#0BAAFF] hover:bg-[#38B6FF]/20 font-bold rounded-lg cursor-pointer"
+              className="px-2.5 py-1 text-xs bg-[#0BAAFF]/10 text-[#0BAAFF] hover:bg-[#0BAAFF]/20 font-bold rounded-lg cursor-pointer"
             >
               + إضافة تصنيف
             </button>
@@ -414,56 +616,58 @@ export default function Settings() {
             ))}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 5. User Management & Roles (Requirement 22) */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-purple-600" />
-            <h4 className="font-bold text-slate-800 text-sm">المستخدمون والصلاحيات (Admin, Manager, Viewer)</h4>
+      {/* TAB 6: Users */}
+      {settingsTab === 'users' && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-3xl">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-purple-600" />
+              <h4 className="font-bold text-slate-800 text-sm">المستخدمون والصلاحيات (Admin, Manager, Viewer)</h4>
+            </div>
+            <button
+              onClick={() => setIsAddUserOpen(true)}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+            >
+              + إضافة مستخدم جديد
+            </button>
           </div>
-          <button
-            onClick={() => setIsAddUserOpen(true)}
-            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition cursor-pointer"
-          >
-            + إضافة مستخدم جديد
-          </button>
-        </div>
 
-        <div className="overflow-x-auto text-xs">
-          <table className="w-full text-right">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                <th className="p-3">اسم المستخدم</th>
-                <th className="p-3">الاسم الكامل</th>
-                <th className="p-3">الدور / الصلاحية</th>
-                <th className="p-3">الحالة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {users.map(u => (
-                <tr key={u.id}>
-                  <td className="p-3 font-mono font-bold text-slate-900">{u.username}</td>
-                  <td className="p-3">{u.full_name}</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                      u.role === 'admin'
-                        ? 'bg-purple-100 text-purple-800'
-                        : (u.role === 'manager' ? 'bg-sky-100 text-[#0BAAFF]' : 'bg-slate-100 text-slate-700')
-                    }`}>
-                      {u.role === 'admin' ? 'مدير نظام (Admin)' : (u.role === 'manager' ? 'مدير عمليات (Manager)' : 'مشاهد فقط (Viewer)')}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">نشط</span>
-                  </td>
+          <div className="overflow-x-auto text-xs">
+            <table className="w-full text-right">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                  <th className="p-3">اسم المستخدم</th>
+                  <th className="p-3">الاسم الكامل</th>
+                  <th className="p-3">الدور / الصلاحية</th>
+                  <th className="p-3">الحالة</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td className="p-3 font-mono font-bold text-slate-900">{u.username}</td>
+                    <td className="p-3">{u.full_name}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                        u.role === 'admin'
+                          ? 'bg-purple-100 text-purple-800'
+                          : (u.role === 'manager' ? 'bg-sky-100 text-[#0BAAFF]' : 'bg-slate-100 text-slate-700')
+                      }`}>
+                        {u.role === 'admin' ? 'مدير نظام (Admin)' : (u.role === 'manager' ? 'مدير مالي (Manager)' : 'مشاهد فقط (Viewer)')}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">نشط</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Add Category Modal */}
       <Modal isOpen={isAddCatOpen} onClose={() => setIsAddCatOpen(false)} title="إضافة تصنيف مصروفات جديد">
@@ -476,12 +680,12 @@ export default function Settings() {
               value={newCatName}
               onChange={(e) => setNewCatName(e.target.value)}
               placeholder="مثال: اشتراكات أدوات الذكاء الاصطناعي"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-[#38B6FF]"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-[#0BAAFF]"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setIsAddCatOpen(false)} className="px-4 py-2 bg-slate-100 rounded-xl font-bold cursor-pointer">إلغاء</button>
-            <button type="submit" className="px-5 py-2 bg-[#38B6FF] text-white rounded-xl font-bold cursor-pointer">إضافة</button>
+            <button type="submit" className="px-5 py-2 bg-[#0BAAFF] text-white rounded-xl font-bold cursor-pointer">إضافة</button>
           </div>
         </form>
       </Modal>
