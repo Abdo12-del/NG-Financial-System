@@ -10,12 +10,7 @@ import {
   Users,
   CheckCircle2,
   Server,
-  Package,
-  HardDrive,
-  FolderDown,
-  FileCode,
-  ShieldCheck,
-  ExternalLink
+  ShieldCheck
 } from 'lucide-react';
 import { apiRequest } from '../utils/api';
 import Modal from '../components/Modal';
@@ -28,7 +23,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
 
   // Active settings subtab
-  const [settingsTab, setSettingsTab] = useState('general'); // 'general', 'database', 'installer', 'categories', 'users'
+  const [settingsTab, setSettingsTab] = useState('general'); // 'general', 'database', 'backup', 'categories', 'users'
 
   // MariaDB Connection Test
   const [mariaConfig, setMariaConfig] = useState({
@@ -181,8 +176,8 @@ export default function Settings() {
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold text-slate-800 text-base">إعدادات النظام وملفات التثبيت الاحترافية</h3>
-          <p className="text-xs text-slate-500">تهيئة خادم MariaDB 10.11.7، ملفات التثبيت (Setup Wizard)، والنسخ الاحتياطي</p>
+          <h3 className="font-bold text-slate-800 text-base">إعدادات النظام وقاعدة البيانات</h3>
+          <p className="text-xs text-slate-500">تهيئة خادم MariaDB 10.11.7 المحلي، العملة، والنسخ الاحتياطي</p>
         </div>
 
         <button
@@ -207,13 +202,6 @@ export default function Settings() {
           className={`px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'database' ? 'bg-white shadow-xs text-[#0BAAFF]' : 'text-slate-600'}`}
         >
           خادم MariaDB 10.11.7
-        </button>
-        <button
-          onClick={() => setSettingsTab('installer')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg transition cursor-pointer ${settingsTab === 'installer' ? 'bg-white shadow-xs text-indigo-600' : 'text-slate-600'}`}
-        >
-          <Package className="w-3.5 h-3.5 text-indigo-500" />
-          <span>ملفات التثبيت (Installer & Setup)</span>
         </button>
         <button
           onClick={() => setSettingsTab('backup')}
@@ -391,161 +379,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* TAB 3: Professional Installer & Distribution (NEW!) */}
-      {settingsTab === 'installer' && (
-        <div className="space-y-6">
-          <div className="p-4.5 bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-100 rounded-2xl flex items-start gap-3.5">
-            <div className="p-2.5 bg-white rounded-xl shadow-2xs text-[#0BAAFF]">
-              <Package className="w-6 h-6" />
-            </div>
-            <div>
-              <h4 className="font-extrabold text-slate-900 text-sm">حزم التثبيت والتوزيع المكتبي (Professional Desktop Packaging)</h4>
-              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                تم تجهيز نظام NG Financial System بحزم تثبيت متكاملة تحاكي كبرى برامج الأعمال العالمية (Setup Wizard .exe)،
-                بما يضمن التثبيت بنقرة واحدة، إنشاء اختصارات سطح المكتب، وتهيئة قاعدة بيانات MariaDB 10.11.7 تلقائياً.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Installer 1: Inno Setup & Windows Installer (.exe) */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-sky-100 text-[#0BAAFF] flex items-center justify-center font-bold">
-                    <FileCode className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-slate-900 text-sm">مثبت الإعداد الرسمي (Inno Setup Script)</h5>
-                    <span className="text-[10px] text-slate-400 font-mono">NG-Financial-System-Setup.exe</span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
-                  سكربت تثبيت احترافي مبني بأداة Inno Setup العالمية لإنشاء ملف تنفيذي قياسي لويندوز مع دعم اللغتين العربية والإنجليزية.
-                </p>
-
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 text-[11px] text-slate-600 mb-4">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>واجهة تثبيت عربية بالكامل مع الشعار الرسمي</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>إنشاء اختصار سطح المكتب وقائمة ابدأ (Desktop & Start Menu)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>إنشاء قاعدة بيانات ng_financial تلقائياً أثناء التثبيت</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>إلغاء تثبيت نظيف مسجل في لوحة تحكم ويندوز (Control Panel)</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="font-mono text-slate-400">installer/NG-Financial-System.iss</span>
-                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">جاهز للبناء</span>
-              </div>
-            </div>
-
-            {/* Installer 2: Interactive Batch Wizard (One-Click Setup) */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
-                    <HardDrive className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-slate-900 text-sm">المثبت التفاعلي الفوري (Native Windows Wizard)</h5>
-                    <span className="text-[10px] text-slate-400 font-mono">Install-NG-Financial-System.bat</span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
-                  معالج تثبيت فوري يعمل بنقرة واحدة على أي جهاز ويندوز دون الحاجة لبرامج خارجية:
-                </p>
-
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 text-[11px] text-slate-600 mb-4">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>طلب صلاحيات المسؤول تلقائياً (UAC Elevation)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>نسخ الملفات إلى مسار C:\Program Files\NG Financial System</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>فحص وتفعيل خدمة MariaDB محلياً واستيراد schema.sql</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>إنشاء اختصار سطح المكتب عبر Windows Script Host</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="font-mono text-slate-400">installer/Install-NG-Financial-System.bat</span>
-                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">جاهز للتشغيل</span>
-              </div>
-            </div>
-
-            {/* Installer 3: Portable Edition */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center font-bold">
-                    <FolderDown className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-slate-900 text-sm">النسخة المحمولة (Portable Edition)</h5>
-                    <span className="text-[10px] text-slate-400 font-mono">Build-Portable.bat</span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
-                  حزمة تشغيل فورية تعمل من الفلاش ديسك (USB) أو أي مجلد دون تثبيت في نظام ويندوز، مع قاعدة بيانات محلية ذاتية التضمين.
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="font-mono text-slate-400">installer/Build-Portable.bat</span>
-                <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-bold text-[10px]">محمول Offline</span>
-              </div>
-            </div>
-
-            {/* Installer 4: Windows Command Launcher */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
-                    <FileCode className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-slate-900 text-sm">مشغل ويندوز المحلي (Windows Launcher)</h5>
-                    <span className="text-[10px] text-slate-400 font-mono">scripts/run-windows.bat</span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-600 mb-3 leading-relaxed">
-                  ملف تشغيل سريع يطلق خادم النظام المكتبي على جهاز ويندوز ويفتح النافذة الرئيسية فورياً.
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="font-mono text-slate-400">scripts/run-windows.bat</span>
-                <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-bold text-[10px]">مشغل سريع</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: Backup & Restore */}
+      {/* TAB 3: Backup & Restore */}
       {settingsTab === 'backup' && (
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-2xl">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
@@ -589,7 +423,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* TAB 5: Categories */}
+      {/* TAB 4: Categories */}
       {settingsTab === 'categories' && (
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-2xl">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -618,7 +452,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* TAB 6: Users */}
+      {/* TAB 5: Users */}
       {settingsTab === 'users' && (
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 max-w-3xl">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
