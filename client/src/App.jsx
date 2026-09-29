@@ -9,7 +9,6 @@ import Teachers from './pages/Teachers';
 import Cohorts from './pages/Cohorts';
 import OwnerAccount from './pages/OwnerAccount';
 import Reports from './pages/Reports';
-import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 
@@ -21,6 +20,7 @@ import OwnerTransactionModal from './components/modals/OwnerTransactionModal';
 function MainApp() {
   const { isAuthenticated, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Modals state
   const [isAddRevenueOpen, setIsAddRevenueOpen] = useState(false);
@@ -37,8 +37,8 @@ function MainApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
-        <div className="w-10 h-10 border-4 border-[#38B6FF] border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-800">
+        <div className="w-10 h-10 border-4 border-[#0BAAFF] border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -57,33 +57,16 @@ function MainApp() {
     setRefreshKey(k => k + 1);
   };
 
-  const getPageTitle = () => {
-    switch (activeTab) {
-      case 'dashboard': return { title: 'لوحة التحكم المالية', subtitle: 'نظرة شاملة ومؤشرات حية للأكاديمية' };
-      case 'transactions': return { title: 'المعاملات المالية اليومية', subtitle: 'دفتر القيود المالية للإيرادات والمصروفات' };
-      case 'students': return { title: 'الطلاب والتحصيلات', subtitle: 'سجل الاشتراكات والمبالغ المستحقة' };
-      case 'teachers': return { title: 'الأساتذة ومستحقات الأجور', subtitle: 'حساب حصص المؤطرين والمدفوعات' };
-      case 'cohorts': return { title: 'الدورات والأفواج', subtitle: 'هيكلة الدورات ونظام الأجور المخصص لكل فوج' };
-      case 'owner': return { title: 'الحساب الجاري للمالك', subtitle: 'ضخ وسحب السيولة الشخصية مفصولاً عن التشغيل' };
-      case 'reports': return { title: 'التقارير المالية المعتمدة', subtitle: 'قائمة الدخل، التدفق النقدي، وهوامش الربحية' };
-      case 'audit': return { title: 'سجل التدقيق والمراقبة', subtitle: 'تتبع العمليات والمطابقة المحاسبية' };
-      case 'settings': return { title: 'الإعدادات والبيانات المحلية', subtitle: 'تهيئة MariaDB 10.11.7 والنسخ الاحتياطي' };
-      default: return { title: 'NG Financial System', subtitle: '' };
-    }
-  };
-
-  const { title, subtitle } = getPageTitle();
-
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC]">
+    <div className="flex min-h-screen bg-[#F4F9FD]/60 text-slate-800 font-sans">
       {/* Fixed Sidebar */}
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         <Header
-          title={title}
-          subtitle={subtitle}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
           onOpenAddRevenue={() => handleOpenAddRevenue()}
           onOpenAddExpense={() => setIsAddExpenseOpen(true)}
           onOpenOwnerModal={() => {
@@ -102,12 +85,14 @@ function MainApp() {
                 setOwnerInitialType('CONTRIBUTION');
                 setIsOwnerModalOpen(true);
               }}
+              onViewAllTransactions={() => setActiveTab('transactions')}
             />
           )}
 
           {activeTab === 'transactions' && (
             <Transactions
               key={refreshKey}
+              searchTerm={searchTerm}
               onOpenAddRevenue={() => handleOpenAddRevenue()}
               onOpenAddExpense={() => setIsAddExpenseOpen(true)}
             />
@@ -116,12 +101,13 @@ function MainApp() {
           {activeTab === 'students' && (
             <Students
               key={refreshKey}
+              searchTerm={searchTerm}
               onOpenAddPaymentForStudent={(studentId, cohortId) => handleOpenAddRevenue(studentId, cohortId)}
             />
           )}
 
           {activeTab === 'teachers' && (
-            <Teachers key={refreshKey} />
+            <Teachers key={refreshKey} searchTerm={searchTerm} />
           )}
 
           {activeTab === 'cohorts' && (
@@ -144,10 +130,6 @@ function MainApp() {
 
           {activeTab === 'reports' && (
             <Reports key={refreshKey} />
-          )}
-
-          {activeTab === 'audit' && (
-            <AuditLogs key={refreshKey} />
           )}
 
           {activeTab === 'settings' && (
