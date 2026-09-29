@@ -1,0 +1,33 @@
+{
+  "name": "ng-financial-system",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "cd client && npm run build",
+    "test": "node server/tests/verify_scenario.js",
+    "test:void": "node server/tests/test_void.js",
+    "desktop": "electron electron/main.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.24.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abdo12-del/NG-Financial-System.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Abdo12-del/NG-Financial-System/issues"
+  },
+  "homepage": "https://github.com/Abdo12-del/NG-Financial-System#readme"
+}
