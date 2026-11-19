@@ -24,6 +24,7 @@ echo [2/3] جاري نسخ الملفات والحزم المدمجة...
 xcopy "%~dp0..\server" "!PORTABLE_DIR!\server" /E /I /Y /Q >nul
 xcopy "%~dp0..\client\dist" "!PORTABLE_DIR!\client\dist" /E /I /Y /Q >nul
 xcopy "%~dp0..\database" "!PORTABLE_DIR!\database" /E /I /Y /Q >nul
+xcopy "%~dp0..\mariadb-10.11.7-winx64" "!PORTABLE_DIR!\mariadb-10.11.7-winx64" /E /I /Y /Q >nul
 xcopy "%~dp0..\scripts" "!PORTABLE_DIR!\scripts" /E /I /Y /Q >nul
 xcopy "%~dp0..\node_modules" "!PORTABLE_DIR!\node_modules" /E /I /Y /Q >nul
 copy /y "%~dp0..\package.json" "!PORTABLE_DIR!\" >nul
@@ -50,8 +51,8 @@ echo.
 echo هذه النسخة تعمل بشكل محمول بالكامل بدون الحاجة لتثبيت مسبق:
 echo 1. انقر نقراً مزدوجاً على "تشغيل_النظام_المحمول.bat"
 echo 2. سيفتح النظام تلقائياً في متصفحك أو عبر تطبيق سطح المكتب
-echo 3. للاتصال بـ MariaDB 10.11.7: ادخل إلى الإعدادات وأدخل بيانات خادمك
-echo 4. تعمل قاعدة البيانات المحلية المدمجة فوراً في حالة عدم وجود MariaDB.
+echo 3. يبدأ التطبيق MariaDB 10.11.7 المرفقة تلقائياً ويحفظ البيانات في مجلد data.
+echo 4. عند وجود قاعدة SQLite سابقة، ينقل التطبيق بياناتها تلقائياً ويحافظ على الملف الأصلي.
 ) > "!PORTABLE_DIR!\README_PORTABLE.txt"
 
 echo.

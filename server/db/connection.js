@@ -1,14 +1,16 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const Database = require('better-sqlite3');
+const { startLocalMariaDb, stopLocalMariaDb } = require('./localMariaDb');
 
 let mariaPool = null;
 let sqliteDb = null;
 let currentEngine = 'sqlite'; // 'mariadb' or 'sqlite'
 
-const DB_CONFIG_FILE = path.join(__dirname, '../../data/db_config.json');
-const SQLITE_FILE = path.join(__dirname, '../../data/ng_financial.db');
+const DB_CONFIG_FILE = process.env.DB_CONFIG_FILE || path.join(__dirname, '../../data/db_config.json');
+const SQLITE_FILE = process.env.SQLITE_FILE || path.join(__dirname, '../../data/ng_financial.db');
 
 function ensureDataDir() {
   const dir = path.join(__dirname, '../../data');
@@ -27,9 +29,10 @@ function loadConfig() {
     }
   }
   return {
-    engine: 'auto',
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '3306', 10),
+    engine: 'mariadb',
+    bundled: !process.env.DB_HOST,
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: parseInt(process.env.DB_PORT || (process.env.DB_HOST ? '3306' : '3307'), 10),
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'ng_financial'
@@ -39,6 +42,18 @@ function loadConfig() {
 function saveConfig(config) {
   ensureDataDir();
   fs.writeFileSync(DB_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+}
+
+async function closeDb() {
+  if (mariaPool) {
+    await mariaPool.end();
+    mariaPool = null;
+  }
+  if (sqliteDb) {
+    sqliteDb.close();
+    sqliteDb = null;
+  }
+  await stopLocalMariaDb();
 }
 
 // Convert MySQL SQL dialect quirks to SQLite if needed
@@ -54,6 +69,14 @@ function translateSqlForSqlite(sql) {
     .replace(/CURRENT_TIMESTAMP\s+ON\s+UPDATE\s+CURRENT_TIMESTAMP/gi, 'CURRENT_TIMESTAMP')
     .replace(/ON\s+DUPLICATE\s+KEY\s+UPDATE/gi, 'ON CONFLICT DO UPDATE SET');
   return translated;
+}
+
+function translateSqlForMariaDb(sql) {
+  return sql
+    .replace(/datetime\(\s*'now'\s*,\s*'localtime'\s*\)/gi, 'CURRENT_TIMESTAMP')
+    .replace(/date\(\s*'now'\s*,\s*'-11 months'\s*,\s*'start of month'\s*\)/gi, "DATE_FORMAT(DATE_SUB(CURRENT_DATE, INTERVAL 11 MONTH), '%Y-%m-01')")
+    .replace(/date\(\s*'now'\s*\)/gi, 'CURRENT_DATE')
+    .replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'REPLACE INTO');
 }
 
 function initSqlite() {
@@ -155,6 +178,8 @@ function initSqlite() {
       email TEXT NULL,
       notes TEXT NULL,
       status TEXT NOT NULL DEFAULT 'active',
+      contact_status TEXT NOT NULL DEFAULT 'none',
+      next_contact_date TEXT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
@@ -169,6 +194,8 @@ function initSqlite() {
       paid_amount REAL NOT NULL DEFAULT 0.00,
       remaining_amount REAL NOT NULL DEFAULT 0.00,
       payment_status TEXT NOT NULL DEFAULT 'UNPAID',
+      confirmation_status TEXT NOT NULL DEFAULT 'confirmed',
+      billing_start_month TEXT NULL,
       enrollment_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'enrolled',
       notes TEXT NULL,
@@ -178,6 +205,22 @@ function initSqlite() {
       FOREIGN KEY (cohort_id) REFERENCES cohorts(id) ON DELETE RESTRICT,
       UNIQUE(student_id, cohort_id)
     );
+
+    CREATE TABLE IF NOT EXISTS monthly_enrollment_charges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      enrollment_id INTEGER NOT NULL,
+      cohort_id INTEGER NOT NULL,
+      charge_month TEXT NOT NULL,
+      amount REAL NOT NULL,
+      created_by INTEGER NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (enrollment_id) REFERENCES enrollments(id) ON DELETE RESTRICT,
+      FOREIGN KEY (cohort_id) REFERENCES cohorts(id) ON DELETE RESTRICT,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE(enrollment_id, charge_month)
+    );
+    CREATE INDEX IF NOT EXISTS idx_monthly_enrollment_charges_cohort_month
+      ON monthly_enrollment_charges (cohort_id, charge_month);
 
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,8 +361,122 @@ function initSqlite() {
       description TEXT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
+
+    CREATE TABLE IF NOT EXISTS marketing_campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      platform TEXT NULL,
+      budget REAL NOT NULL DEFAULT 0.00,
+      budget_type TEXT NOT NULL DEFAULT 'total',
+      duration_type TEXT NOT NULL DEFAULT 'fixed',
+      spent_amount REAL NOT NULL DEFAULT 0.00,
+      conversation_count INTEGER NOT NULL DEFAULT 0,
+      registration_count INTEGER NOT NULL DEFAULT 0,
+      confirmed_count INTEGER NOT NULL DEFAULT 0,
+      attended_count INTEGER NOT NULL DEFAULT 0,
+      start_date TEXT NULL,
+      end_date TEXT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      notes TEXT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS marketing_campaign_followups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL,
+      user_id INTEGER NULL,
+      followup_date TEXT NOT NULL,
+      spent_amount REAL NOT NULL DEFAULT 0.00,
+      conversation_count INTEGER NOT NULL DEFAULT 0,
+      registration_count INTEGER NOT NULL DEFAULT 0,
+      confirmed_count INTEGER NOT NULL DEFAULT 0,
+      attended_count INTEGER NOT NULL DEFAULT 0,
+      notes TEXT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (campaign_id) REFERENCES marketing_campaigns(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_marketing_followups_campaign
+      ON marketing_campaign_followups (campaign_id, followup_date);
+
+    CREATE TABLE IF NOT EXISTS registration_leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guardian_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      telegram_username TEXT NULL,
+      student_name TEXT NULL,
+      course_interest TEXT NULL,
+      status TEXT NOT NULL DEFAULT 'new',
+      student_id INTEGER NULL,
+      next_followup_date TEXT NULL,
+      notes TEXT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS registration_lead_followups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      user_id INTEGER NULL,
+      contact_method TEXT NOT NULL,
+      status TEXT NOT NULL,
+      note TEXT NULL,
+      next_followup_date TEXT NULL,
+      contacted_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (lead_id) REFERENCES registration_leads(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_registration_leads_status_followup
+      ON registration_leads (status, next_followup_date);
+    CREATE INDEX IF NOT EXISTS idx_registration_lead_followups_lead
+      ON registration_lead_followups (lead_id, contacted_at);
+
+    CREATE TABLE IF NOT EXISTS student_contact_followups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      user_id INTEGER NULL,
+      contact_method TEXT NOT NULL,
+      status TEXT NOT NULL,
+      note TEXT NULL,
+      next_contact_date TEXT NULL,
+      contacted_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_student_contact_followups_student
+      ON student_contact_followups (student_id, contacted_at);
   `;
   sqliteDb.exec(schemaSql);
+  const campaignColumns = sqliteDb.pragma('table_info(marketing_campaigns)');
+  if (!campaignColumns.some(column => column.name === 'budget_type')) {
+    sqliteDb.exec("ALTER TABLE marketing_campaigns ADD COLUMN budget_type TEXT NOT NULL DEFAULT 'total'");
+  }
+  if (!campaignColumns.some(column => column.name === 'duration_type')) {
+    sqliteDb.exec("ALTER TABLE marketing_campaigns ADD COLUMN duration_type TEXT NOT NULL DEFAULT 'fixed'");
+  }
+  const registrationLeadColumns = sqliteDb.pragma('table_info(registration_leads)');
+  if (!registrationLeadColumns.some(column => column.name === 'telegram_username')) {
+    sqliteDb.exec('ALTER TABLE registration_leads ADD COLUMN telegram_username TEXT NULL');
+  }
+  if (!registrationLeadColumns.some(column => column.name === 'student_id')) {
+    sqliteDb.exec('ALTER TABLE registration_leads ADD COLUMN student_id INTEGER NULL');
+  }
+  const studentColumns = sqliteDb.pragma('table_info(students)');
+  if (!studentColumns.some(column => column.name === 'contact_status')) {
+    sqliteDb.exec("ALTER TABLE students ADD COLUMN contact_status TEXT NOT NULL DEFAULT 'none'");
+  }
+  if (!studentColumns.some(column => column.name === 'next_contact_date')) {
+    sqliteDb.exec('ALTER TABLE students ADD COLUMN next_contact_date TEXT NULL');
+  }
+  const enrollmentColumns = sqliteDb.pragma('table_info(enrollments)');
+  if (!enrollmentColumns.some(column => column.name === 'confirmation_status')) {
+    sqliteDb.exec("ALTER TABLE enrollments ADD COLUMN confirmation_status TEXT NOT NULL DEFAULT 'confirmed'");
+  }
+  if (!enrollmentColumns.some(column => column.name === 'billing_start_month')) {
+    sqliteDb.exec('ALTER TABLE enrollments ADD COLUMN billing_start_month TEXT NULL');
+  }
   seedSqliteDefaults();
 }
 
@@ -386,13 +543,30 @@ function seedSqliteDefaults() {
 }
 
 async function tryConnectMariaDb(config) {
+  let bootstrapPool;
   try {
+    if (!/^[a-zA-Z0-9_]+$/.test(config.database)) {
+      throw new Error('اسم قاعدة البيانات غير صالح');
+    }
+    bootstrapPool = mysql.createPool({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      multipleStatements: true,
+      waitForConnections: true,
+      connectionLimit: 2
+    });
+    await bootstrapPool.query(`CREATE DATABASE IF NOT EXISTS \`${config.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await bootstrapPool.end();
+
     const pool = mysql.createPool({
       host: config.host,
       port: config.port,
       user: config.user,
       password: config.password,
       database: config.database,
+      multipleStatements: true,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
@@ -406,23 +580,138 @@ async function tryConnectMariaDb(config) {
     console.log(`[Database] Successfully connected to MariaDB 10.11.7 at ${config.host}:${config.port}/${config.database}`);
     return true;
   } catch (err) {
-    console.warn(`[Database] MariaDB connection failed (${err.message}). Using embedded SQLite database.`);
+    if (bootstrapPool) await bootstrapPool.end().catch(() => {});
+    console.warn(`[Database] MariaDB connection failed (${err.message}).`);
     return false;
   }
 }
 
-async function initDb() {
-  const config = loadConfig();
-  let connected = false;
-  if (config.engine === 'mariadb' || config.engine === 'auto') {
-    connected = await tryConnectMariaDb(config);
+const migrationTableOrder = [
+  'users', 'financial_accounts', 'payment_methods', 'expense_categories',
+  'courses', 'teachers', 'cohorts', 'students', 'enrollments', 'monthly_enrollment_charges', 'payments',
+  'registration_leads', 'registration_lead_followups',
+  'expenses', 'owner_transactions', 'financial_ledger', 'teacher_compensations',
+  'settings', 'audit_logs', 'marketing_campaigns', 'marketing_campaign_followups'
+];
+
+async function migrateSqliteDataToMariaDb() {
+  if (!fs.existsSync(SQLITE_FILE)) return false;
+
+  const source = new Database(SQLITE_FILE, { readonly: true, fileMustExist: true });
+  const sourceTables = new Set(source.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => row.name));
+  const migrationData = migrationTableOrder
+    .filter(table => sourceTables.has(table))
+    .map(table => ({ table, rows: source.prepare(`SELECT * FROM \`${table}\``).all() }))
+    .filter(({ rows }) => rows.length > 0);
+
+  if (migrationData.length === 0) {
+    source.close();
+    return false;
   }
 
-  if (!connected) {
-    currentEngine = 'sqlite';
-    initSqlite();
-    console.log(`[Database] Embedded SQLite engine initialized at ${SQLITE_FILE}`);
+  const connection = await mariaPool.getConnection();
+  try {
+    await connection.beginTransaction();
+    for (const { table, rows } of migrationData) {
+      const [columnRows] = await connection.query(`SHOW COLUMNS FROM \`${table}\``);
+      const availableColumns = new Set(columnRows.map(column => column.Field));
+      for (const row of rows) {
+        const columns = Object.keys(row).filter(column => availableColumns.has(column));
+        if (columns.length === 0) continue;
+        const identifiers = columns.map(column => `\`${column}\``).join(', ');
+        const placeholders = columns.map(() => '?').join(', ');
+        const values = columns.map(column => row[column]);
+        await connection.execute(`INSERT INTO \`${table}\` (${identifiers}) VALUES (${placeholders})`, values);
+      }
+    }
+    await connection.commit();
+    console.log(`[Database] Migrated SQLite records to MariaDB from ${SQLITE_FILE}`);
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+    source.close();
   }
+}
+
+async function initializeMariaDbSchema() {
+  const appRoot = path.resolve(__dirname, '../..');
+  const schemaSql = fs.readFileSync(path.join(appRoot, 'database', 'schema.sql'), 'utf8');
+  await mariaPool.query(schemaSql);
+  const [campaignColumns] = await mariaPool.query('SHOW COLUMNS FROM marketing_campaigns LIKE ?', ['budget_type']);
+  if (campaignColumns.length === 0) {
+    await mariaPool.query("ALTER TABLE marketing_campaigns ADD COLUMN budget_type ENUM('daily', 'total') NOT NULL DEFAULT 'total' AFTER budget");
+  }
+  const [durationColumns] = await mariaPool.query('SHOW COLUMNS FROM marketing_campaigns LIKE ?', ['duration_type']);
+  if (durationColumns.length === 0) {
+    await mariaPool.query("ALTER TABLE marketing_campaigns ADD COLUMN duration_type ENUM('fixed', 'ongoing') NOT NULL DEFAULT 'fixed' AFTER budget_type");
+  }
+  const [telegramColumns] = await mariaPool.query('SHOW COLUMNS FROM registration_leads LIKE ?', ['telegram_username']);
+  if (telegramColumns.length === 0) {
+    await mariaPool.query('ALTER TABLE registration_leads ADD COLUMN telegram_username VARCHAR(100) NULL AFTER phone');
+  }
+  const [leadStudentColumns] = await mariaPool.query('SHOW COLUMNS FROM registration_leads LIKE ?', ['student_id']);
+  if (leadStudentColumns.length === 0) {
+    await mariaPool.query('ALTER TABLE registration_leads ADD COLUMN student_id INT NULL, ADD CONSTRAINT fk_registration_leads_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL');
+  }
+  const [studentContactStatusColumns] = await mariaPool.query('SHOW COLUMNS FROM students LIKE ?', ['contact_status']);
+  if (studentContactStatusColumns.length === 0) {
+    await mariaPool.query("ALTER TABLE students ADD COLUMN contact_status VARCHAR(30) NOT NULL DEFAULT 'none'");
+  }
+  const [studentContactDateColumns] = await mariaPool.query('SHOW COLUMNS FROM students LIKE ?', ['next_contact_date']);
+  if (studentContactDateColumns.length === 0) {
+    await mariaPool.query('ALTER TABLE students ADD COLUMN next_contact_date DATE NULL');
+  }
+  const [enrollmentConfirmationColumns] = await mariaPool.query('SHOW COLUMNS FROM enrollments LIKE ?', ['confirmation_status']);
+  if (enrollmentConfirmationColumns.length === 0) {
+    await mariaPool.query("ALTER TABLE enrollments ADD COLUMN confirmation_status VARCHAR(20) NOT NULL DEFAULT 'confirmed' AFTER payment_status");
+  }
+  const [enrollmentBillingMonthColumns] = await mariaPool.query('SHOW COLUMNS FROM enrollments LIKE ?', ['billing_start_month']);
+  if (enrollmentBillingMonthColumns.length === 0) {
+    await mariaPool.query('ALTER TABLE enrollments ADD COLUMN billing_start_month CHAR(7) NULL AFTER confirmation_status');
+  }
+
+  const userCount = await getOne(`SELECT COUNT(*) as total FROM users`);
+  if (Number(userCount.total) > 0) return;
+
+  const migrated = await migrateSqliteDataToMariaDb();
+  if (!migrated) {
+    const seedSql = fs.readFileSync(path.join(appRoot, 'database', 'seed.sql'), 'utf8');
+    await mariaPool.query(seedSql);
+    console.log('[Database] Initialized MariaDB with default system data.');
+  }
+}
+
+async function initDb() {
+  let config = loadConfig();
+  let connected = false;
+  if (config.engine === 'mariadb' || config.engine === 'auto') {
+    if (config.bundled) {
+      const dataDir = config.dataDir || process.env.MARIADB_DATA_DIR || path.join(__dirname, '../../data/mariadb');
+      if (!config.password) {
+        if (fs.existsSync(path.join(dataDir, 'mysql'))) {
+          throw new Error('MariaDB credentials are missing; restore data/db_config.json before starting.');
+        }
+        config = { ...config, password: crypto.randomBytes(32).toString('hex') };
+        saveConfig(config);
+      }
+      await startLocalMariaDb(config);
+    }
+    connected = await tryConnectMariaDb(config);
+    if (connected) {
+      await initializeMariaDbSchema();
+      return currentEngine;
+    }
+    if (config.engine === 'mariadb') {
+      throw new Error('MariaDB is required but could not be initialized. SQLite fallback is disabled.');
+    }
+  }
+
+  currentEngine = 'sqlite';
+  initSqlite();
+  console.log(`[Database] Embedded SQLite engine initialized at ${SQLITE_FILE}`);
   return currentEngine;
 }
 
@@ -444,10 +733,25 @@ async function testMariaDbConnection(config) {
   }
 }
 
+async function testCurrentMariaDbConnection() {
+  if (currentEngine !== 'mariadb' || !mariaPool) {
+    return { success: false, error: 'MariaDB is not the active database engine.' };
+  }
+  try {
+    const [rows] = await mariaPool.query('SELECT VERSION() as version, DATABASE() as db');
+    return { success: true, version: rows[0].version, database: rows[0].db };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 async function query(sql, params = []) {
   if (currentEngine === 'mariadb' && mariaPool) {
-    const [rows] = await mariaPool.query(sql, params);
-    return rows;
+    const [result] = await mariaPool.query(translateSqlForMariaDb(sql), params);
+    return Array.isArray(result) ? result : {
+      insertId: result.insertId,
+      affectedRows: result.affectedRows
+    };
   } else {
     // SQLite
     const stmt = sqliteDb.prepare(sql);
@@ -462,7 +766,7 @@ async function query(sql, params = []) {
 
 async function getOne(sql, params = []) {
   if (currentEngine === 'mariadb' && mariaPool) {
-    const [rows] = await mariaPool.query(sql, params);
+    const [rows] = await mariaPool.query(translateSqlForMariaDb(sql), params);
     return rows[0] || null;
   } else {
     const stmt = sqliteDb.prepare(sql);
@@ -482,16 +786,22 @@ async function transaction(callback) {
     try {
       const helper = {
         query: async (sql, params = []) => {
-          const [rows] = await connection.query(sql, params);
-          return rows;
+          const [result] = await connection.query(translateSqlForMariaDb(sql), params);
+          return Array.isArray(result) ? result : {
+            insertId: result.insertId,
+            affectedRows: result.affectedRows
+          };
         },
         getOne: async (sql, params = []) => {
-          const [rows] = await connection.query(sql, params);
+          const [rows] = await connection.query(translateSqlForMariaDb(sql), params);
           return rows[0] || null;
         },
         execute: async (sql, params = []) => {
-          const [rows] = await connection.execute(sql, params);
-          return rows;
+          const [result] = await connection.execute(translateSqlForMariaDb(sql), params);
+          return {
+            insertId: result.insertId,
+            affectedRows: result.affectedRows
+          };
         }
       };
       const result = await callback(helper);
@@ -544,9 +854,15 @@ module.exports = {
   execute,
   transaction,
   getCurrentEngine: () => currentEngine,
+  getDatabaseInfo: () => {
+    const { engine, bundled, host, port, database } = loadConfig();
+    return { engine, bundled: Boolean(bundled), host, port, database };
+  },
   testMariaDbConnection,
+  testCurrentMariaDbConnection,
   saveConfig,
   loadConfig,
   getSqliteDb: () => sqliteDb,
-  getMariaPool: () => mariaPool
+  getMariaPool: () => mariaPool,
+  closeDb
 };

@@ -198,9 +198,9 @@ router.get('/cohorts-profitability', authenticate, async (req, res) => {
         crs.name as course_name,
         t.full_name as teacher_name,
         COUNT(e.id) as student_count,
-        COALESCE(SUM(e.net_price), 0) as total_enrollment_value,
+        COALESCE(SUM(CASE WHEN e.confirmation_status != 'pending' THEN e.net_price ELSE 0 END), 0) as total_enrollment_value,
         COALESCE(SUM(e.paid_amount), 0) as total_collected,
-        COALESCE(SUM(e.remaining_amount), 0) as total_outstanding
+        COALESCE(SUM(CASE WHEN e.confirmation_status != 'pending' THEN e.remaining_amount ELSE 0 END), 0) as total_outstanding
       FROM cohorts c
       JOIN courses crs ON c.course_id = crs.id
       JOIN teachers t ON c.teacher_id = t.id
@@ -213,10 +213,13 @@ router.get('/cohorts-profitability', authenticate, async (req, res) => {
     for (const c of cohorts) {
       const collected = parseFloat(c.total_collected || 0);
       let teacherShare = 0;
+      let expectedTeacherShare = 0;
       if (c.compensation_type === 'PERCENTAGE') {
         teacherShare = parseFloat(((collected * parseFloat(c.compensation_value)) / 100).toFixed(2));
+        expectedTeacherShare = parseFloat(((parseFloat(c.total_enrollment_value || 0) * parseFloat(c.compensation_value)) / 100).toFixed(2));
       } else {
         teacherShare = parseFloat(c.compensation_value || 0);
+        expectedTeacherShare = teacherShare;
       }
 
       // Direct expenses
@@ -229,6 +232,10 @@ router.get('/cohorts-profitability', authenticate, async (req, res) => {
 
       const netProfit = collected - teacherShare - directExpenses;
       const margin = collected > 0 ? ((netProfit / collected) * 100).toFixed(1) : 0;
+      const expectedNetProfit = parseFloat(c.total_enrollment_value || 0) - expectedTeacherShare - directExpenses;
+      const expectedMargin = parseFloat(c.total_enrollment_value || 0) > 0
+        ? ((expectedNetProfit / parseFloat(c.total_enrollment_value)) * 100).toFixed(1)
+        : 0;
 
       result.push({
         ...c,
@@ -236,9 +243,12 @@ router.get('/cohorts-profitability', authenticate, async (req, res) => {
         total_collected: collected,
         total_outstanding: parseFloat(c.total_outstanding || 0),
         teacher_share: teacherShare,
+        expected_teacher_share: expectedTeacherShare,
         direct_expenses: directExpenses,
         academy_net_profit: netProfit,
-        profit_margin: `${margin}%`
+        profit_margin: `${margin}%`,
+        expected_academy_net_profit: expectedNetProfit,
+        expected_profit_margin: `${expectedMargin}%`
       });
     }
 

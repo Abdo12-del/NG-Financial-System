@@ -14,9 +14,13 @@ const reportsRouter = require('./routes/reports');
 const settingsRouter = require('./routes/settings');
 const backupRouter = require('./routes/backup');
 const auditRouter = require('./routes/audit');
+const marketingRouter = require('./routes/marketing');
+const registrationLeadsRouter = require('./routes/registrationLeads');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+let httpServer = null;
+let shutdownStarted = false;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -45,6 +49,8 @@ app.use('/api/reports', reportsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/backup', backupRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api/marketing', marketingRouter);
+app.use('/api/registration-leads', registrationLeadsRouter);
 
 // Serve static frontend files if built
 const clientDistPath = path.join(__dirname, '../client/dist');
@@ -69,7 +75,7 @@ async function startServer() {
     const engine = await db.initDb();
     console.log(`[Database] Initialized with engine: ${engine}`);
 
-    app.listen(PORT, '0.0.0.0', () => {
+    httpServer = app.listen(PORT, '0.0.0.0', () => {
       console.log(`====================================================`);
       console.log(`🚀 NG Financial System is running!`);
       console.log(`📍 Local Server: http://0.0.0.0:${PORT}`);
@@ -82,5 +88,17 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+async function shutdownServer() {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  if (httpServer) {
+    await new Promise(resolve => httpServer.close(resolve));
+  }
+  await db.closeDb();
+}
+
+process.once('SIGINT', () => shutdownServer().finally(() => process.exit(0)));
+process.once('SIGTERM', () => shutdownServer().finally(() => process.exit(0)));
 
 startServer();

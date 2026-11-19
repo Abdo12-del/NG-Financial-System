@@ -21,7 +21,8 @@ router.get('/', authenticate, async (req, res) => {
       accounts,
       paymentMethods,
       categories,
-      currentDbEngine: db.getCurrentEngine()
+      currentDbEngine: db.getCurrentEngine(),
+      databaseConnection: db.getDatabaseInfo()
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -37,10 +38,15 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
     }
 
     for (const [key, val] of Object.entries(settings)) {
+      const upsertSql = db.getCurrentEngine() === 'mariadb'
+        ? `INSERT INTO settings (key_name, value_data, updated_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP)
+           ON DUPLICATE KEY UPDATE value_data = VALUES(value_data), updated_at = CURRENT_TIMESTAMP`
+        : `INSERT INTO settings (key_name, value_data, updated_at)
+           VALUES (?, ?, datetime('now', 'localtime'))
+           ON CONFLICT(key_name) DO UPDATE SET value_data = excluded.value_data, updated_at = datetime('now', 'localtime')`;
       await db.execute(`
-        INSERT INTO settings (key_name, value_data, updated_at)
-        VALUES (?, ?, datetime('now', 'localtime'))
-        ON CONFLICT(key_name) DO UPDATE SET value_data = excluded.value_data, updated_at = datetime('now', 'localtime')
+        ${upsertSql}
       `, [key, String(val)]);
     }
 
@@ -59,13 +65,15 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
 router.post('/test-connection', authenticate, requireRole(['admin']), async (req, res) => {
   try {
     const { host, port, user, password, database } = req.body;
-    const result = await db.testMariaDbConnection({
-      host: host || 'localhost',
-      port: parseInt(port || '3306', 10),
-      user: user || 'root',
-      password: password || '',
-      database: database || 'ng_financial'
-    });
+    const result = db.getCurrentEngine() === 'mariadb'
+      ? await db.testCurrentMariaDbConnection()
+      : await db.testMariaDbConnection({
+        host: host || 'localhost',
+        port: parseInt(port || '3306', 10),
+        user: user || 'root',
+        password: password || '',
+        database: database || 'ng_financial'
+      });
 
     if (result.success) {
       res.json({

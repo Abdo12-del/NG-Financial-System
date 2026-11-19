@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS `students` (
   `email` VARCHAR(100) NULL,
   `notes` TEXT NULL,
   `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+  `contact_status` VARCHAR(30) NOT NULL DEFAULT 'none',
+  `next_contact_date` DATE NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -126,6 +128,8 @@ CREATE TABLE IF NOT EXISTS `enrollments` (
   `paid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `remaining_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `payment_status` ENUM('PAID', 'PARTIAL', 'UNPAID', 'OVERDUE') NOT NULL DEFAULT 'UNPAID',
+  `confirmation_status` VARCHAR(20) NOT NULL DEFAULT 'confirmed',
+  `billing_start_month` CHAR(7) NULL,
   `enrollment_date` DATE NOT NULL,
   `status` ENUM('enrolled', 'completed', 'dropped') NOT NULL DEFAULT 'enrolled',
   `notes` TEXT NULL,
@@ -135,6 +139,21 @@ CREATE TABLE IF NOT EXISTS `enrollments` (
   FOREIGN KEY (`cohort_id`) REFERENCES `cohorts` (`id`) ON DELETE RESTRICT,
   UNIQUE KEY `uniq_student_cohort` (`student_id`, `cohort_id`),
   INDEX `idx_enrollments_payment_status` (`payment_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `monthly_enrollment_charges` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `enrollment_id` INT NOT NULL,
+  `cohort_id` INT NOT NULL,
+  `charge_month` CHAR(7) NOT NULL,
+  `amount` DECIMAL(12,2) NOT NULL,
+  `created_by` INT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`enrollment_id`) REFERENCES `enrollments` (`id`) ON DELETE RESTRICT,
+  FOREIGN KEY (`cohort_id`) REFERENCES `cohorts` (`id`) ON DELETE RESTRICT,
+  FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  UNIQUE KEY `uniq_monthly_charge_enrollment_month` (`enrollment_id`, `charge_month`),
+  INDEX `idx_monthly_charges_cohort_month` (`cohort_id`, `charge_month`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 10. جدول مدفوعات الطلاب (إيرادات التشغيل)
@@ -304,4 +323,90 @@ CREATE TABLE IF NOT EXISTS `settings` (
   `value_data` TEXT NOT NULL,
   `description` VARCHAR(255) NULL,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 17. حملات التسويق ومراحل تحويل العملاء
+CREATE TABLE IF NOT EXISTS `marketing_campaigns` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(150) NOT NULL,
+  `platform` VARCHAR(100) NULL,
+  `budget` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `budget_type` ENUM('daily', 'total') NOT NULL DEFAULT 'total',
+  `duration_type` ENUM('fixed', 'ongoing') NOT NULL DEFAULT 'fixed',
+  `spent_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `conversation_count` INT NOT NULL DEFAULT 0,
+  `registration_count` INT NOT NULL DEFAULT 0,
+  `confirmed_count` INT NOT NULL DEFAULT 0,
+  `attended_count` INT NOT NULL DEFAULT 0,
+  `start_date` DATE NULL,
+  `end_date` DATE NULL,
+  `status` ENUM('active', 'paused', 'completed') NOT NULL DEFAULT 'active',
+  `notes` TEXT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_marketing_campaigns_status` (`status`),
+  INDEX `idx_marketing_campaigns_dates` (`start_date`, `end_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `marketing_campaign_followups` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `campaign_id` INT NOT NULL,
+  `user_id` INT NULL,
+  `followup_date` DATE NOT NULL,
+  `spent_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `conversation_count` INT NOT NULL DEFAULT 0,
+  `registration_count` INT NOT NULL DEFAULT 0,
+  `confirmed_count` INT NOT NULL DEFAULT 0,
+  `attended_count` INT NOT NULL DEFAULT 0,
+  `notes` TEXT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`campaign_id`) REFERENCES `marketing_campaigns` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  INDEX `idx_marketing_followups_campaign` (`campaign_id`, `followup_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 18. متابعة أولياء أمور الطلاب المحتملين
+CREATE TABLE IF NOT EXISTS `registration_leads` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `guardian_name` VARCHAR(150) NOT NULL,
+  `phone` VARCHAR(50) NOT NULL,
+  `telegram_username` VARCHAR(100) NULL,
+  `student_name` VARCHAR(150) NULL,
+  `course_interest` VARCHAR(150) NULL,
+  `status` VARCHAR(30) NOT NULL DEFAULT 'new',
+  `student_id` INT NULL,
+  `next_followup_date` DATE NULL,
+  `notes` TEXT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL,
+  INDEX `idx_registration_leads_status_followup` (`status`, `next_followup_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `registration_lead_followups` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `lead_id` INT NOT NULL,
+  `user_id` INT NULL,
+  `contact_method` VARCHAR(20) NOT NULL,
+  `status` VARCHAR(30) NOT NULL,
+  `note` TEXT NULL,
+  `next_followup_date` DATE NULL,
+  `contacted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`lead_id`) REFERENCES `registration_leads` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  INDEX `idx_registration_lead_followups_lead` (`lead_id`, `contacted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `student_contact_followups` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `student_id` INT NOT NULL,
+  `user_id` INT NULL,
+  `contact_method` VARCHAR(20) NOT NULL,
+  `status` VARCHAR(30) NOT NULL,
+  `note` TEXT NULL,
+  `next_contact_date` DATE NULL,
+  `contacted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  INDEX `idx_student_contact_followups_student` (`student_id`, `contacted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -64,9 +64,9 @@ router.get('/cohorts', authenticate, async (req, res) => {
         t.full_name as teacher_name,
         t.phone as teacher_phone,
         COUNT(e.id) as enrolled_students_count,
-        COALESCE(SUM(e.net_price), 0) as total_enrollment_value,
+        COALESCE(SUM(CASE WHEN e.confirmation_status != 'pending' THEN e.net_price ELSE 0 END), 0) as total_enrollment_value,
         COALESCE(SUM(e.paid_amount), 0) as total_collected_revenue,
-        COALESCE(SUM(e.remaining_amount), 0) as total_outstanding
+        COALESCE(SUM(CASE WHEN e.confirmation_status != 'pending' THEN e.remaining_amount ELSE 0 END), 0) as total_outstanding
       FROM cohorts c
       JOIN courses crs ON c.course_id = crs.id
       JOIN teachers t ON c.teacher_id = t.id
@@ -108,6 +108,121 @@ router.post('/cohorts', authenticate, requireRole(['admin', 'manager']), async (
   }
 });
 
+// Add the same monthly charge to selected enrollments in a cohort.
+router.post('/cohorts/:id/monthly-charges', authenticate, requireRole(['admin', 'manager']), async (req, res) => {
+  try {
+    const cohortId = Number(req.params.id);
+    const { enrollmentIds, month } = req.body;
+    const amountInput = req.body.amount;
+    const amount = (typeof amountInput === 'number' || (typeof amountInput === 'string' && amountInput.trim() !== ''))
+      ? Number(amountInput)
+      : Number.NaN;
+
+    if (!Number.isInteger(cohortId) || cohortId <= 0) {
+      return res.status(400).json({ error: 'رقم الفوج غير صالح' });
+    }
+    if (!Array.isArray(enrollmentIds) || enrollmentIds.length === 0 || enrollmentIds.length > 500) {
+      return res.status(400).json({ error: 'يرجى تحديد طالب واحد على الأقل (بحد أقصى 500 طالب)' });
+    }
+    const ids = enrollmentIds.map(Number);
+    if (ids.some(id => !Number.isInteger(id) || id <= 0) || new Set(ids).size !== ids.length) {
+      return res.status(400).json({ error: 'قائمة تسجيلات الطلاب غير صالحة' });
+    }
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ error: 'يرجى اختيار شهر صحيح' });
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 9999999999.99 || Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-8) {
+      return res.status(400).json({ error: 'المبلغ يجب أن يكون أكبر من صفر وبحد أقصى منزلتين عشريتين' });
+    }
+
+    const result = await db.transaction(async tx => {
+      const cohort = await tx.getOne('SELECT id, name FROM cohorts WHERE id = ?', [cohortId]);
+      if (!cohort) return { error: 'الفوج غير موجود', status: 404 };
+
+      const enrollments = [];
+      for (const id of ids) {
+        const enrollment = await tx.getOne(`
+          SELECT e.id, e.student_id, e.agreed_price, e.net_price, e.paid_amount,
+            e.remaining_amount, e.status, e.confirmation_status, e.billing_start_month,
+            s.full_name AS student_name
+          FROM enrollments e
+          JOIN students s ON s.id = e.student_id
+          WHERE e.id = ? AND e.cohort_id = ?
+        `, [id, cohortId]);
+        if (!enrollment || enrollment.status === 'dropped') {
+          return { error: 'أحد الطلاب المحددين غير مسجل في هذا الفوج أو تم استبعاده', status: 400 };
+        }
+        if (enrollment.confirmation_status !== 'confirmed') {
+          return {
+            error: `لا يمكن إضافة مستحقات شهرية للطالب ${enrollment.student_name} قبل تأكيد تسجيله أو أثناء تجميده`,
+            status: 400
+          };
+        }
+        if (enrollment.billing_start_month && month < enrollment.billing_start_month) {
+          return {
+            error: `لا يمكن إضافة مستحق شهر قبل بدء التسجيل في ${enrollment.billing_start_month} للطالب ${enrollment.student_name}`,
+            status: 400
+          };
+        }
+
+        const existingCharge = await tx.getOne(`
+          SELECT id FROM monthly_enrollment_charges
+          WHERE enrollment_id = ? AND charge_month = ?
+        `, [id, month]);
+        if (existingCharge) {
+          return { error: `تم تسجيل مستحق هذا الشهر للطالب ${enrollment.student_name} مسبقًا`, status: 409 };
+        }
+        enrollments.push(enrollment);
+      }
+
+      for (const enrollment of enrollments) {
+        const charge = await tx.execute(`
+          INSERT INTO monthly_enrollment_charges
+            (enrollment_id, cohort_id, charge_month, amount, created_by)
+          VALUES (?, ?, ?, ?, ?)
+        `, [enrollment.id, cohortId, month, amount, req.user.id || null]);
+
+        await tx.execute(`
+          UPDATE enrollments
+          SET agreed_price = agreed_price + ?,
+            net_price = net_price + ?,
+            remaining_amount = remaining_amount + ?,
+            payment_status = CASE WHEN paid_amount > 0 THEN 'PARTIAL' ELSE 'UNPAID' END,
+            updated_at = datetime('now', 'localtime')
+          WHERE id = ?
+        `, [amount, amount, amount, enrollment.id]);
+
+        await tx.execute(`
+          INSERT INTO audit_logs
+            (user_id, username, action_type, entity_name, entity_id, new_values, details, created_at)
+          VALUES (?, ?, 'CREATE', 'monthly_enrollment_charges', ?, ?, ?, datetime('now', 'localtime'))
+        `, [
+          req.user.id || null,
+          req.user.username,
+          charge.insertId,
+          JSON.stringify({ enrollment_id: enrollment.id, cohort_id: cohortId, month, amount }),
+          `إضافة مستحق شهر ${month} للطالب ${enrollment.student_name} في فوج ${cohort.name}`
+        ]);
+      }
+      return { count: enrollments.length, totalAmount: Number((amount * enrollments.length).toFixed(2)) };
+    });
+
+    if (result.error) return res.status(result.status).json({ error: result.error });
+    res.status(201).json({
+      success: true,
+      count: result.count,
+      totalAmount: result.totalAmount,
+      message: `تم إضافة مستحق شهر ${month} إلى ${result.count} طالب`
+    });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'تم تسجيل مستحق هذا الشهر لأحد الطلاب المحددين مسبقًا' });
+    }
+    console.error('Error adding monthly cohort charges:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Cohort Financial Summary (التقرير والملخص المالي المفصل للفوج)
 router.get('/cohorts/:id/summary', authenticate, async (req, res) => {
   try {
@@ -139,9 +254,10 @@ router.get('/cohorts/:id/summary', authenticate, async (req, res) => {
       ORDER BY e.id ASC
     `, [cohortId]);
 
-    const totalEnrollmentValue = enrollments.reduce((sum, e) => sum + parseFloat(e.net_price || 0), 0);
+    const confirmedEnrollments = enrollments.filter(e => e.confirmation_status !== 'pending');
+    const totalEnrollmentValue = confirmedEnrollments.reduce((sum, e) => sum + parseFloat(e.net_price || 0), 0);
     const totalCollected = enrollments.reduce((sum, e) => sum + parseFloat(e.paid_amount || 0), 0);
-    const totalRemaining = enrollments.reduce((sum, e) => sum + parseFloat(e.remaining_amount || 0), 0);
+    const totalRemaining = confirmedEnrollments.reduce((sum, e) => sum + parseFloat(e.remaining_amount || 0), 0);
 
     // Teacher Share calculation
     let teacherTotalShare = 0;

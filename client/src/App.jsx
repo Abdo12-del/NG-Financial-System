@@ -3,12 +3,15 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
+import ProfitHistory from './pages/ProfitHistory';
 import Transactions from './pages/Transactions';
 import Students from './pages/Students';
 import Teachers from './pages/Teachers';
 import Cohorts from './pages/Cohorts';
 import OwnerAccount from './pages/OwnerAccount';
 import Reports from './pages/Reports';
+import Marketing from './pages/Marketing';
+import RegistrationFollowups from './pages/RegistrationFollowups';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 
@@ -20,6 +23,7 @@ import OwnerTransactionModal from './components/modals/OwnerTransactionModal';
 function MainApp() {
   const { isAuthenticated, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedCampaignId, setSelectedCampaignId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modals state
@@ -86,6 +90,14 @@ function MainApp() {
                 setIsOwnerModalOpen(true);
               }}
               onViewAllTransactions={() => setActiveTab('transactions')}
+              onViewProfitHistory={() => setActiveTab('profit-history')}
+            />
+          )}
+
+          {activeTab === 'profit-history' && (
+            <ProfitHistory
+              key={refreshKey}
+              onBack={() => setActiveTab('dashboard')}
             />
           )}
 
@@ -104,6 +116,10 @@ function MainApp() {
               searchTerm={searchTerm}
               onOpenAddPaymentForStudent={(studentId, cohortId) => handleOpenAddRevenue(studentId, cohortId)}
             />
+          )}
+
+          {activeTab === 'registration-followups' && (
+            <RegistrationFollowups key={refreshKey} />
           )}
 
           {activeTab === 'teachers' && (
@@ -130,6 +146,39 @@ function MainApp() {
 
           {activeTab === 'reports' && (
             <Reports key={refreshKey} />
+          )}
+
+          {activeTab === 'marketing-dashboard' && (
+            <Marketing
+              key={refreshKey}
+              view="dashboard"
+              onViewCampaigns={() => setActiveTab('marketing-campaigns')}
+              onOpenCampaign={(campaignId) => {
+                setSelectedCampaignId(campaignId);
+                setActiveTab('marketing-detail');
+              }}
+            />
+          )}
+
+          {activeTab === 'marketing-campaigns' && (
+            <Marketing
+              key={refreshKey}
+              view="campaigns"
+              onViewDashboard={() => setActiveTab('marketing-dashboard')}
+              onOpenCampaign={(campaignId) => {
+                setSelectedCampaignId(campaignId);
+                setActiveTab('marketing-detail');
+              }}
+            />
+          )}
+
+          {activeTab === 'marketing-detail' && (
+            <Marketing
+              key={`${refreshKey}-${selectedCampaignId}`}
+              view="detail"
+              campaignId={selectedCampaignId}
+              onViewCampaigns={() => setActiveTab('marketing-campaigns')}
+            />
           )}
 
           {activeTab === 'settings' && (

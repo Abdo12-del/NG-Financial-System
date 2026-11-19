@@ -20,19 +20,12 @@ export default function Settings() {
   const [categories, setCategories] = useState([]);
   const [users, setUsers] = useState([]);
   const [dbEngine, setDbEngine] = useState('sqlite');
+  const [databaseConnection, setDatabaseConnection] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Active settings subtab
   const [settingsTab, setSettingsTab] = useState('general'); // 'general', 'database', 'backup', 'categories', 'users'
 
-  // MariaDB Connection Test
-  const [mariaConfig, setMariaConfig] = useState({
-    host: 'localhost',
-    port: '3306',
-    database: 'ng_financial',
-    user: 'root',
-    password: ''
-  });
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
 
@@ -52,16 +45,7 @@ export default function Settings() {
       setSettings(res.settings || {});
       setCategories(res.categories || []);
       setDbEngine(res.currentDbEngine || 'sqlite');
-
-      if (res.settings?.mariadb_host) {
-        setMariaConfig({
-          host: res.settings.mariadb_host,
-          port: res.settings.mariadb_port || '3306',
-          database: res.settings.mariadb_database || 'ng_financial',
-          user: res.settings.mariadb_user || 'root',
-          password: ''
-        });
-      }
+      setDatabaseConnection(res.databaseConnection || null);
 
       const usersRes = await apiRequest('/auth/users').catch(() => ({ users: [] }));
       setUsers(usersRes.users || []);
@@ -81,13 +65,7 @@ export default function Settings() {
       await apiRequest('/settings', {
         method: 'POST',
         body: JSON.stringify({
-          settings: {
-            ...settings,
-            mariadb_host: mariaConfig.host,
-            mariadb_port: mariaConfig.port,
-            mariadb_database: mariaConfig.database,
-            mariadb_user: mariaConfig.user
-          }
+          settings
         })
       });
       alert('تم حفظ إعدادات النظام بنجاح');
@@ -103,7 +81,7 @@ export default function Settings() {
     try {
       const res = await apiRequest('/settings/test-connection', {
         method: 'POST',
-        body: JSON.stringify(mariaConfig)
+        body: JSON.stringify({})
       });
       setTestResult({ success: true, message: res.message });
     } catch (err) {
@@ -113,8 +91,30 @@ export default function Settings() {
     }
   };
 
-  const handleBackupDownload = () => {
-    window.location.href = '/api/backup/export';
+  const handleBackupDownload = async () => {
+    try {
+      const token = localStorage.getItem('ng_token');
+      const response = await fetch('/api/backup/export', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `فشل تصدير النسخة الاحتياطية (${response.status})`);
+      }
+
+      const backupBlob = await response.blob();
+      const downloadUrl = URL.createObjectURL(backupBlob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = downloadUrl;
+      downloadLink.download = `ng_financial_backup_${Date.now()}.json`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } catch (err) {
+      alert('تعذر تصدير النسخة الاحتياطية: ' + err.message);
+    }
   };
 
   const handleRestoreSubmit = async (e) => {
@@ -280,7 +280,7 @@ export default function Settings() {
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
               dbEngine === 'mariadb' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
             }`}>
-              {dbEngine === 'mariadb' ? 'متصل بـ MariaDB محلياً' : 'وضع المعاينة المدمج'}
+              {dbEngine === 'mariadb' ? 'متصل بـ MariaDB' : 'متصل بـ SQLite'}
             </span>
           </div>
 
@@ -288,61 +288,23 @@ export default function Settings() {
             يعمل النظام أوفلاين بالكامل مع قاعدة بيانات MariaDB المثبتة محليًا على جهاز Windows بدون الحاجة للإنترنت.
           </p>
 
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">اسم المضيف (Host)</label>
-              <input
-                type="text"
-                value={mariaConfig.host}
-                onChange={(e) => setMariaConfig({ ...mariaConfig, host: e.target.value })}
-                placeholder="localhost"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
-              />
+              <span className="block font-bold text-slate-500 mb-1">المضيف</span>
+              <span className="font-mono text-slate-800">{databaseConnection?.host || '-'}</span>
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">المنفذ (Port)</label>
-              <input
-                type="text"
-                value={mariaConfig.port}
-                onChange={(e) => setMariaConfig({ ...mariaConfig, port: e.target.value })}
-                placeholder="3306"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">اسم قاعدة البيانات</label>
-              <input
-                type="text"
-                value={mariaConfig.database}
-                onChange={(e) => setMariaConfig({ ...mariaConfig, database: e.target.value })}
-                placeholder="ng_financial"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
-              />
+              <span className="block font-bold text-slate-500 mb-1">المنفذ</span>
+              <span className="font-mono text-slate-800">{databaseConnection?.port || '-'}</span>
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">اسم المستخدم</label>
-              <input
-                type="text"
-                value={mariaConfig.user}
-                onChange={(e) => setMariaConfig({ ...mariaConfig, user: e.target.value })}
-                placeholder="root"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
-              />
+              <span className="block font-bold text-slate-500 mb-1">قاعدة البيانات</span>
+              <span className="font-mono text-slate-800">{databaseConnection?.database || '-'}</span>
             </div>
-          </div>
-
-          <div className="text-xs">
-            <label className="block font-bold text-slate-700 mb-1">كلمة المرور (Password)</label>
-            <input
-              type="password"
-              value={mariaConfig.password}
-              onChange={(e) => setMariaConfig({ ...mariaConfig, password: e.target.value })}
-              placeholder="••••••••"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-[#0BAAFF] focus:outline-hidden"
-            />
+            <div>
+              <span className="block font-bold text-slate-500 mb-1">نوع الخادم</span>
+              <span className="text-slate-800">{databaseConnection?.bundled ? 'MariaDB محلية مرفقة' : 'MariaDB خارجية'}</span>
+            </div>
           </div>
 
           <div className="pt-2 flex items-center justify-between">

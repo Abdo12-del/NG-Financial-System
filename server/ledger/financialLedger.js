@@ -41,6 +41,7 @@ class FinancialLedgerService {
     paymentMethodId,
     referenceNo,
     notes,
+    allowOverpayment: allowOverpaymentForPayment = false,
     userId,
     username
   }) {
@@ -67,7 +68,7 @@ class FinancialLedgerService {
 
       // Check overpayment validation
       const allowOverpaymentSetting = await tx.getOne(`SELECT value_data FROM settings WHERE key_name = 'allow_overpayment'`);
-      const allowOverpayment = allowOverpaymentSetting?.value_data === 'true';
+      const allowOverpayment = allowOverpaymentForPayment || allowOverpaymentSetting?.value_data === 'true';
 
       const remainingBefore = parseFloat(enrollment.remaining_amount);
       if (!allowOverpayment && amount > (remainingBefore + 0.001)) {
@@ -100,12 +101,17 @@ class FinancialLedgerService {
       const newPaid = parseFloat(enrollment.paid_amount) + amount;
       const newRemaining = Math.max(0, parseFloat(enrollment.net_price) - newPaid);
       const newPaymentStatus = newRemaining <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID');
+      const confirmationStatus = enrollment.confirmation_status === 'pending' ? 'confirmed' : enrollment.confirmation_status;
+      const billingStartMonth = enrollment.confirmation_status === 'pending'
+        ? pDate.slice(0, 7)
+        : enrollment.billing_start_month || null;
 
       await tx.execute(`
         UPDATE enrollments
-        SET paid_amount = ?, remaining_amount = ?, payment_status = ?, updated_at = datetime('now', 'localtime')
+        SET paid_amount = ?, remaining_amount = ?, payment_status = ?,
+          confirmation_status = ?, billing_start_month = ?, updated_at = datetime('now', 'localtime')
         WHERE id = ?
-      `, [newPaid, newRemaining, newPaymentStatus, enrollment.id]);
+      `, [newPaid, newRemaining, newPaymentStatus, confirmationStatus, billingStartMonth, enrollment.id]);
 
       // 4. Update Financial Account Balance (Cash Safe / Bank / CCP increases)
       await tx.execute(`
@@ -381,8 +387,189 @@ class FinancialLedgerService {
     });
   }
 
+  static async editTransaction({
+    type,
+    id,
+    amount,
+    transactionDate,
+    paymentMethodId,
+    referenceNo,
+    notes,
+    description,
+    reason,
+    userId,
+    username
+  }) {
+    amount = parseFloat(amount);
+    if (isNaN(amount) || amount <= 0) {
+      throw new Error('المبلغ يجب أن يكون رقمًا أكبر من الصفر');
+    }
+    if (!reason || reason.trim() === '') {
+      throw new Error('يرجى ذكر سبب التعديل للتوثيق والتدقيق');
+    }
+
+    return await db.transaction(async (tx) => {
+      const method = await tx.getOne(`SELECT * FROM payment_methods WHERE id = ?`, [paymentMethodId]);
+      if (!method) throw new Error('طريقة الدفع غير صالحة');
+      const accountId = method.default_account_id || 1;
+
+      if (type === 'payment') {
+        const payment = await tx.getOne(`SELECT * FROM payments WHERE id = ?`, [id]);
+        if (!payment) throw new Error('الدفعة غير موجودة');
+        if (payment.status !== 'completed') throw new Error('لا يمكن تعديل دفعة ملغاة أو غير مكتملة');
+
+        const enrollment = await tx.getOne(`
+          SELECT e.*, c.compensation_type, c.compensation_value
+          FROM enrollments e
+          JOIN cohorts c ON c.id = e.cohort_id
+          WHERE e.id = ?
+        `, [payment.enrollment_id]);
+        if (!enrollment) throw new Error('تسجيل الطالب المرتبط بالدفعة غير موجود');
+        const paymentLedger = await tx.getOne(`
+          SELECT id FROM financial_ledger
+          WHERE source_table = 'payments' AND source_id = ? AND is_voided = 0
+        `, [id]);
+        if (!paymentLedger) throw new Error('قيد الدفعة الأصلي غير موجود أو ملغى');
+        const setting = await tx.getOne(`SELECT value_data FROM settings WHERE key_name = 'allow_overpayment'`);
+        const newPaid = Math.max(0, parseFloat(enrollment.paid_amount) - parseFloat(payment.amount) + amount);
+        if (setting?.value_data !== 'true' && newPaid > parseFloat(enrollment.net_price) + 0.001) {
+          throw new Error('المبلغ المعدل يتجاوز قيمة تسجيل الطالب');
+        }
+
+        const newRemaining = Math.max(0, parseFloat(enrollment.net_price) - newPaid);
+        const paymentStatus = newRemaining <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID');
+        const date = transactionDate || payment.payment_date;
+        await tx.execute(`UPDATE financial_accounts SET balance = balance - ? WHERE id = ?`, [payment.amount, payment.financial_account_id]);
+        await tx.execute(`UPDATE financial_accounts SET balance = balance + ? WHERE id = ?`, [amount, accountId]);
+        await tx.execute(`
+          UPDATE payments
+          SET amount = ?, payment_date = ?, payment_method_id = ?, financial_account_id = ?, reference_no = ?, notes = ?
+          WHERE id = ?
+        `, [amount, date, paymentMethodId, accountId, referenceNo || null, notes || null, id]);
+        await tx.execute(`
+          UPDATE enrollments
+          SET paid_amount = ?, remaining_amount = ?, payment_status = ?, updated_at = datetime('now', 'localtime')
+          WHERE id = ?
+        `, [newPaid, newRemaining, paymentStatus, enrollment.id]);
+        await tx.execute(`
+          UPDATE financial_ledger
+          SET entry_date = ?, financial_account_id = ?, debit_amount = ?
+          WHERE id = ?
+        `, [date, accountId, amount, paymentLedger.id]);
+
+        if (enrollment.compensation_type === 'PERCENTAGE') {
+          const teacherShare = parseFloat(((amount * parseFloat(enrollment.compensation_value)) / 100).toFixed(2));
+          await tx.execute(`
+            UPDATE teacher_compensations
+            SET amount = ?, calculation_basis = ?, entry_date = ?
+            WHERE payment_id = ? AND entry_type = 'ACCRUAL' AND status = 'active'
+          `, [teacherShare, `استحقاق بنسبة ${enrollment.compensation_value}% من دفعة الطالب (${amount} دج)`, date, id]);
+        }
+
+        await FinancialLedgerService.recordAudit(tx, {
+          userId,
+          username,
+          actionType: 'UPDATE',
+          entityName: 'payments',
+          entityId: id,
+          oldValues: payment,
+          newValues: { amount, paymentDate: date, paymentMethodId, referenceNo, notes, reason },
+          details: `تعديل دفعة الطالب بقيمة ${payment.amount} إلى ${amount} دج: ${reason.trim()}`
+        });
+        return { success: true, newRemaining, paymentStatus };
+      }
+
+      if (type === 'expense') {
+        const expense = await tx.getOne(`SELECT * FROM expenses WHERE id = ?`, [id]);
+        if (!expense) throw new Error('المصروف غير موجود');
+        if (expense.status !== 'completed') throw new Error('لا يمكن تعديل مصروف ملغى أو غير مكتمل');
+
+        const category = await tx.getOne(`SELECT name FROM expense_categories WHERE id = ?`, [expense.category_id]);
+        const ledger = await tx.getOne(`SELECT id FROM financial_ledger WHERE source_table = 'expenses' AND source_id = ? AND is_voided = 0`, [id]);
+        if (!ledger) throw new Error('قيد المصروف الأصلي غير موجود أو ملغى');
+        const date = transactionDate || expense.expense_date;
+        const updatedDescription = description?.trim() || expense.description;
+        await tx.execute(`UPDATE financial_accounts SET balance = balance + ? WHERE id = ?`, [expense.amount, expense.financial_account_id]);
+        await tx.execute(`UPDATE financial_accounts SET balance = balance - ? WHERE id = ?`, [amount, accountId]);
+        await tx.execute(`
+          UPDATE expenses
+          SET amount = ?, expense_date = ?, payment_method_id = ?, financial_account_id = ?, description = ?, reference_no = ?, notes = ?
+          WHERE id = ?
+        `, [amount, date, paymentMethodId, accountId, updatedDescription, referenceNo || null, notes || null, id]);
+        await tx.execute(`
+          UPDATE financial_ledger
+          SET entry_date = ?, financial_account_id = ?, credit_amount = ?, description = ?
+          WHERE id = ?
+        `, [date, accountId, amount, `مصروف: [${category?.name || 'مصروف'}] ${updatedDescription}`, ledger.id]);
+        await tx.execute(`
+          UPDATE teacher_compensations SET amount = ?, entry_date = ?
+          WHERE expense_id = ? AND entry_type = 'PAYOUT' AND status = 'active'
+        `, [amount, date, id]);
+
+        await FinancialLedgerService.recordAudit(tx, {
+          userId,
+          username,
+          actionType: 'UPDATE',
+          entityName: 'expenses',
+          entityId: id,
+          oldValues: expense,
+          newValues: { amount, expenseDate: date, paymentMethodId, description: updatedDescription, referenceNo, notes, reason },
+          details: `تعديل مصروف من ${expense.amount} إلى ${amount} دج: ${reason.trim()}`
+        });
+        return { success: true };
+      }
+
+      if (type === 'owner_transaction') {
+        const ownerTx = await tx.getOne(`SELECT * FROM owner_transactions WHERE id = ?`, [id]);
+        if (!ownerTx) throw new Error('معاملة المالك غير موجودة');
+        if (ownerTx.status !== 'completed') throw new Error('لا يمكن تعديل معاملة ملغاة أو غير مكتملة');
+
+        const ledger = await tx.getOne(`SELECT id FROM financial_ledger WHERE source_table = 'owner_transactions' AND source_id = ? AND is_voided = 0`, [id]);
+        if (!ledger) throw new Error('قيد معاملة المالك الأصلية غير موجود أو ملغى');
+        const date = transactionDate || ownerTx.transaction_date;
+        const updatedNotes = notes ?? ownerTx.notes;
+        const isContribution = ownerTx.transaction_type === 'CONTRIBUTION';
+
+        if (isContribution) {
+          await tx.execute(`UPDATE financial_accounts SET balance = balance - ? WHERE id = ?`, [ownerTx.amount, ownerTx.financial_account_id]);
+          await tx.execute(`UPDATE financial_accounts SET balance = balance + ? WHERE id = ?`, [amount, accountId]);
+        } else {
+          await tx.execute(`UPDATE financial_accounts SET balance = balance + ? WHERE id = ?`, [ownerTx.amount, ownerTx.financial_account_id]);
+          await tx.execute(`UPDATE financial_accounts SET balance = balance - ? WHERE id = ?`, [amount, accountId]);
+        }
+
+        await tx.execute(`
+          UPDATE owner_transactions
+          SET amount = ?, transaction_date = ?, payment_method_id = ?, financial_account_id = ?, reference_no = ?, notes = ?
+          WHERE id = ?
+        `, [amount, date, paymentMethodId, accountId, referenceNo || null, updatedNotes, id]);
+        await tx.execute(`
+          UPDATE financial_ledger
+          SET entry_date = ?, financial_account_id = ?, debit_amount = ?, credit_amount = ?, description = ?
+          WHERE id = ?
+        `, [date, accountId, isContribution ? amount : 0, isContribution ? 0 : amount,
+          isContribution ? `ضخ سيولة شخصية من المالك (Owner -> Academy): ${updatedNotes || ''}` : `سحب شخصي للمالك (Academy -> Owner): ${updatedNotes || ''}`,
+          ledger.id]);
+
+        await FinancialLedgerService.recordAudit(tx, {
+          userId,
+          username,
+          actionType: 'UPDATE',
+          entityName: 'owner_transactions',
+          entityId: id,
+          oldValues: ownerTx,
+          newValues: { amount, transactionDate: date, paymentMethodId, referenceNo, notes: updatedNotes, reason },
+          details: `تعديل معاملة المالك من ${ownerTx.amount} إلى ${amount} دج: ${reason.trim()}`
+        });
+        return { success: true };
+      }
+
+      throw new Error('نوع المعاملة المراد تعديلها غير معروف');
+    });
+  }
+
   /**
-   * 4. Void / Reverse Transaction (Prevents hard deletes and maintains audit integrity)
+   * Void / Reverse Transaction (Prevents hard deletes and maintains audit integrity)
    */
   static async voidTransaction({ type, id, reason, userId, username }) {
     if (!reason || reason.trim() === '') {
@@ -648,6 +835,7 @@ class FinancialLedgerService {
       WHERE status != 'dropped'
     `);
     const studentOutstanding = parseFloat(studentDebtRow?.total || 0);
+    const expectedNetProfit = netProfit + studentOutstanding - teacherPayables;
 
     return {
       totalRevenue,
@@ -658,7 +846,8 @@ class FinancialLedgerService {
       totalOwnerContributions,
       totalOwnerWithdrawals,
       teacherPayables,
-      studentOutstanding
+      studentOutstanding,
+      expectedNetProfit
     };
   }
 }

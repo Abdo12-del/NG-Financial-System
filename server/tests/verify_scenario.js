@@ -1,3 +1,12 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ng-financial-test-'));
+process.env.DB_CONFIG_FILE = path.join(testDataDir, 'db_config.json');
+process.env.SQLITE_FILE = path.join(testDataDir, 'ng_financial.db');
+fs.writeFileSync(process.env.DB_CONFIG_FILE, JSON.stringify({ engine: 'sqlite' }));
+
 const db = require('../db/connection');
 const FinancialLedger = require('../ledger/financialLedger');
 
@@ -57,6 +66,7 @@ async function runScenarioTest() {
     VALUES (?, ?, 4000.00, 4000.00, 0.00, 4000.00, 'UNPAID', date('now'))
   `, [studentId, cohortId]);
   const enrollmentId = enrollRes.insertId;
+  const expectedProfitBeforePayment = (await FinancialLedger.getDashboardMetrics()).expectedNetProfit;
 
   console.log('2. Step 1: Owner contributes 50,000 DZD (ضخ سيولة شخصية)...');
   await FinancialLedger.recordOwnerTransaction({
@@ -74,6 +84,13 @@ async function runScenarioTest() {
     notes: 'دفع كامل رسوم الدورة'
   });
   console.log(`   Teacher Share accrued: ${payResult.teacherShare} DZD (Expected: 2400.00 DZD)`);
+  const expectedProfitAfterPayment = (await FinancialLedger.getDashboardMetrics()).expectedNetProfit;
+  if (expectedProfitBeforePayment - expectedProfitAfterPayment !== payResult.teacherShare) {
+    throw new Error(
+      `Expected profit should decrease by the teacher share (${payResult.teacherShare}); ` +
+      `before=${expectedProfitBeforePayment}, after=${expectedProfitAfterPayment}`
+    );
+  }
 
   console.log('4. Step 3: Academy pays 5,000 DZD for advertising (مصروف إعلانات)...');
   await FinancialLedger.recordExpense({
@@ -129,11 +146,66 @@ async function runScenarioTest() {
   if (allPassed) {
     console.log('\n🎉 ALL FINANCIAL ACCOUNTING RULES AND FORMULAS VERIFIED 100% ACCURATE!');
   } else {
-    process.exit(1);
+    throw new Error('Accounting scenario assertions failed.');
+  }
+
+  console.log('\n7. Verifying the same student can pay for a second course...');
+  const secondCourseRes = await db.execute(`
+    INSERT INTO courses (name, default_price, status)
+    VALUES ('دورة التصميم الرقمي', 2000.00, 'active')
+  `);
+  const secondCohortRes = await db.execute(`
+    INSERT INTO cohorts (course_id, teacher_id, name, compensation_type, compensation_value, status)
+    VALUES (?, ?, 'فوج التصميم B1', 'PERCENTAGE', 60.00, 'active')
+  `, [secondCourseRes.insertId, teacherId]);
+  const secondEnrollmentRes = await db.execute(`
+    INSERT INTO enrollments (student_id, cohort_id, agreed_price, net_price, paid_amount, remaining_amount, payment_status, enrollment_date)
+    VALUES (?, ?, 2000.00, 2000.00, 0.00, 2000.00, 'UNPAID', date('now'))
+  `, [studentId, secondCohortRes.insertId]);
+
+  await FinancialLedger.recordStudentPayment({
+    enrollmentId: secondEnrollmentRes.insertId,
+    amount: 2000.00,
+    paymentMethodId: 1,
+    notes: 'دفعة الطالب لدورة ثانية'
+  });
+
+  const secondCourseSummary = await db.getOne(`
+    SELECT
+      COUNT(DISTINCT e.id) as enrollment_count,
+      COUNT(DISTINCT p.id) as payment_count,
+      COUNT(DISTINCT e.cohort_id) as cohort_count,
+      COUNT(DISTINCT e.student_id) as student_count
+    FROM enrollments e
+    LEFT JOIN payments p ON p.enrollment_id = e.id AND p.status = 'completed'
+    WHERE e.student_id = ?
+  `, [studentId]);
+  const studentCount = await db.getOne(`
+    SELECT COUNT(*) as total FROM students WHERE id = ?
+  `, [studentId]);
+
+  const sameStudentAcrossCourses = [
+    { label: 'One student record remains', ok: studentCount.total === 1 },
+    { label: 'Student has two course enrollments', ok: secondCourseSummary.enrollment_count === 2 },
+    { label: 'Student has two completed payments', ok: secondCourseSummary.payment_count === 2 },
+    { label: 'Payments cover two different cohorts', ok: secondCourseSummary.cohort_count === 2 },
+    { label: 'Both enrollments share one student identity', ok: secondCourseSummary.student_count === 1 }
+  ];
+
+  for (const check of sameStudentAcrossCourses) {
+    if (check.ok) {
+      console.log(`✅ [PASS] ${check.label}`);
+    } else {
+      console.error(`❌ [FAIL] ${check.label}`);
+      throw new Error(`Same-student multi-course regression failed: ${check.label}`);
+    }
   }
 }
 
 runScenarioTest().catch((err) => {
   console.error('Test error:', err);
-  process.exit(1);
+  process.exitCode = 1;
+}).finally(async () => {
+  await db.closeDb();
+  fs.rmSync(testDataDir, { recursive: true, force: true });
 });

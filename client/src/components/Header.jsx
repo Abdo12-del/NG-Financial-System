@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Calendar, ChevronDown, Minus, Square, X, User } from 'lucide-react';
+import { Search, Calendar, ChevronDown, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Header({ searchTerm, setSearchTerm, onSearchSubmit }) {
@@ -29,7 +29,7 @@ export default function Header({ searchTerm, setSearchTerm, onSearchSubmit }) {
         </div>
       </div>
 
-      {/* Right: Date Range, User Profile, Window Buttons */}
+      {/* Right: Date Range and User Profile */}
       <div className="flex items-center gap-4 shrink-0">
         {/* Date Range Badge */}
         <div className="flex items-center gap-2 text-xs text-slate-600 bg-white border border-slate-200/80 px-3 py-1 rounded-xl shadow-2xs">
@@ -52,19 +52,6 @@ export default function Header({ searchTerm, setSearchTerm, onSearchSubmit }) {
             <span className="text-[10px] text-slate-400 font-medium">مدير النظام</span>
           </div>
           <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-        </div>
-
-        {/* Simulated Windows Window Controls */}
-        <div className="flex items-center gap-2 text-slate-400 border-r border-slate-200 pr-3 mr-1">
-          <button className="hover:text-slate-600 p-1 transition cursor-pointer" title="تصغير">
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <button className="hover:text-slate-600 p-1 transition cursor-pointer" title="تكبير">
-            <Square className="w-3 h-3" />
-          </button>
-          <button className="hover:text-rose-600 p-1 transition cursor-pointer" title="إغلاق">
-            <X className="w-3.5 h-3.5" />
-          </button>
         </div>
       </div>
     </div>

@@ -6,13 +6,15 @@ import {
   Filter,
   Download,
   Eye,
-  Ban,
+  Pencil,
+  Trash2,
   ArrowDownLeft,
   ArrowUpRight,
   Wallet
 } from 'lucide-react';
 import { apiRequest, formatCurrency, formatDate, exportToCsv } from '../utils/api';
 import VoidModal from '../components/modals/VoidModal';
+import EditTransactionModal from '../components/modals/EditTransactionModal';
 import Modal from '../components/Modal';
 
 export default function Transactions({ onOpenAddRevenue, onOpenAddExpense }) {
@@ -27,6 +29,7 @@ export default function Transactions({ onOpenAddRevenue, onOpenAddExpense }) {
 
   const [selectedTx, setSelectedTx] = useState(null);
   const [voidTarget, setVoidTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
 
   const fetchTransactions = async () => {
     try {
@@ -209,6 +212,13 @@ export default function Transactions({ onOpenAddRevenue, onOpenAddExpense }) {
                   const isRev = tx.is_operating_revenue === 1;
                   const isExp = tx.is_operating_expense === 1;
                   const isOwner = tx.ledger_category.includes('OWNER');
+                  const transactionType = tx.source_table === 'payments'
+                    ? 'payment'
+                    : tx.source_table === 'expenses'
+                      ? 'expense'
+                      : tx.source_table === 'owner_transactions'
+                        ? 'owner_transaction'
+                        : null;
 
                   let badge = (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700">
@@ -276,19 +286,37 @@ export default function Transactions({ onOpenAddRevenue, onOpenAddExpense }) {
                             <Eye className="w-4 h-4" />
                           </button>
 
-                          {!tx.is_voided && (
+                          {!tx.is_voided && transactionType && (
+                            <button
+                              onClick={() => setEditTarget({
+                                type: transactionType,
+                                id: tx.source_id,
+                                ledgerId: tx.ledger_id,
+                                code: tx.entry_code,
+                                amount
+                              })}
+                              title="تعديل المعاملة"
+                              aria-label={`تعديل المعاملة ${tx.entry_code}`}
+                              className="p-1 text-slate-400 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition cursor-pointer"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {!tx.is_voided && transactionType && (
                             <button
                               onClick={() => setVoidTarget({
-                                type: tx.source_table === 'payments' ? 'payment' : (tx.source_table === 'expenses' ? 'expense' : 'owner_transaction'),
+                                type: transactionType,
                                 id: tx.source_id,
                                 code: tx.entry_code,
                                 description: tx.description,
                                 amount: amount
                               })}
-                              title="إلغاء وعكس العملية (Void)"
+                              title="حذف آمن مع عكس أثر العملية"
+                              aria-label={`حذف آمن للمعاملة ${tx.entry_code}`}
                               className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                             >
-                              <Ban className="w-4 h-4" />
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>
@@ -390,6 +418,15 @@ export default function Transactions({ onOpenAddRevenue, onOpenAddExpense }) {
             fetchTransactions();
           }}
           targetTransaction={voidTarget}
+        />
+      )}
+
+      {editTarget && (
+        <EditTransactionModal
+          isOpen={!!editTarget}
+          onClose={() => setEditTarget(null)}
+          onSuccess={fetchTransactions}
+          targetTransaction={editTarget}
         />
       )}
     </div>

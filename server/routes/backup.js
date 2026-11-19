@@ -8,7 +8,7 @@ router.get('/export', authenticate, requireRole(['admin']), async (req, res) => 
   try {
     const tables = [
       'settings', 'users', 'financial_accounts', 'payment_methods', 'expense_categories',
-      'courses', 'teachers', 'cohorts', 'students', 'enrollments',
+      'courses', 'teachers', 'cohorts', 'students', 'enrollments', 'monthly_enrollment_charges',
       'payments', 'expenses', 'owner_transactions', 'financial_ledger',
       'teacher_compensations', 'audit_logs'
     ];
@@ -51,7 +51,7 @@ router.post('/restore', authenticate, requireRole(['admin']), async (req, res) =
       // Disable foreign keys temporarily for restore if SQLite
       const tables = [
         'audit_logs', 'teacher_compensations', 'financial_ledger',
-        'owner_transactions', 'expenses', 'payments', 'enrollments',
+        'owner_transactions', 'expenses', 'payments', 'monthly_enrollment_charges', 'enrollments',
         'students', 'cohorts', 'teachers', 'courses',
         'expense_categories', 'payment_methods', 'financial_accounts'
       ];

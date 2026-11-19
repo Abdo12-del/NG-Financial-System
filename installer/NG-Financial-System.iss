@@ -2,16 +2,18 @@
 ; NG Financial System - Inno Setup Script
 ; مثبت الإعداد الاحترافي لنظام الإدارة المالية - NG Academy
 ; Compatible with: Windows 10, Windows 11, Windows Server (x64)
-; Target Database: MariaDB 10.11.7 Winx64
+; Default database: bundled local MariaDB 10.11.7; existing SQLite data is migrated on first launch
 ; =====================================================================
 
 #define MyAppName "NG Financial System"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.22"
 #define MyAppPublisher "NG Academy"
 #define MyAppURL "https://ngacademy.dz"
-#define MyAppExeName "NG-Financial-System.exe"
-#define MyAppAssocName "NG Financial File"
-#define MyAppAssocExt ".ngfin"
+#define NodeExePath GetEnv("NODE_EXE")
+
+#if NodeExePath == ""
+	#error "Run installer\\Build-Installer.bat so NODE_EXE is set to the Node.js runtime used to build native dependencies."
+#endif
 
 [Setup]
 ; App Identity
@@ -32,11 +34,12 @@ OutputBaseFilename=NG-Financial-System-Setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=assets\ng-financial-system.ico
+UninstallDisplayIcon={app}\assets\ng-financial-system.ico
+WizardImageFile=assets\ng-financial-system-wizard.bmp
+WizardSmallImageFile=assets\ng-financial-system-small.bmp
 
-; Branding & Visuals
-SetupIconFile=..\client\public\favicon.ico
-UninstallDisplayIcon={app}\client\public\favicon.ico
-WizardSmallImageFile=..\client\public\icon.bmp
+; Branding
 DisableWelcomePage=no
 DisableDirPage=no
 DisableProgramGroupPage=no
@@ -45,6 +48,8 @@ DisableProgramGroupPage=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
+CloseApplications=force
+RestartApplications=no
 
 [Languages]
 Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
@@ -52,28 +57,35 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
-Name: "automariadb"; Description: "تهيئة قاعدة بيانات MariaDB 10.11.7 محلياً وإنشاء الجداول تلقائياً"; GroupDescription: "تهيئة قاعدة البيانات:"
 
 [Files]
-; Application Core Files
-Source: "..\_internal\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\database\schema.sql"; DestDir: "{app}\database"; Flags: ignoreversion
-Source: "..\database\seed.sql"; DestDir: "{app}\database"; Flags: ignoreversion
+; Application and local database runtime
+Source: "..\server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\node_modules\*"; DestDir: "{app}\node_modules"; Excludes: "electron\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\client\dist\*"; DestDir: "{app}\client\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\database\*"; DestDir: "{app}\database"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\mariadb-10.11.7-winx64\*"; DestDir: "{app}\mariadb-10.11.7-winx64"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "assets\ng-financial-system.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "assets\ng-financial-system-logo.png"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "..\node_modules\electron\dist\*"; DestDir: "{app}\electron-runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\electron\main.js"; DestDir: "{app}\electron-app"; Flags: ignoreversion
+Source: "..\electron\preload.js"; DestDir: "{app}\electron-app"; Flags: ignoreversion
+Source: "..\electron\package.json"; DestDir: "{app}\electron-app"; Flags: ignoreversion
+Source: "{#NodeExePath}"; DestDir: "{app}\runtime"; DestName: "node.exe"; Flags: ignoreversion
+Source: "..\package.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\run-windows.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion
-Source: "..\client\public\favicon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+
+[Dirs]
+Name: "{app}\data"; Permissions: users-modify
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\scripts\run-windows.bat"; IconFilename: "{app}\assets\favicon.ico"; Comment: "تشغيل نظام الإدارة المالية NG Financial System"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"; IconFilename: "{app}\assets\favicon.ico"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\scripts\run-windows.bat"; IconFilename: "{app}\assets\favicon.ico"; Tasks: desktopicon; Comment: "NG Financial System - NG Academy"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\electron-runtime\electron.exe"; Parameters: """{app}\electron-app"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\ng-financial-system.ico"; Comment: "تشغيل نظام الإدارة المالية NG Financial System"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\electron-runtime\electron.exe"; Parameters: """{app}\electron-app"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\ng-financial-system.ico"; Tasks: desktopicon; Comment: "NG Financial System - NG Academy"
 
 [Run]
-; Auto-Configure MariaDB Database if user selected task
-Filename: "{cmd}"; Parameters: "/c mysql -u root -h localhost -e ""CREATE DATABASE IF NOT EXISTS ng_financial CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"" && mysql -u root -h localhost ng_financial < ""{app}\database\schema.sql"""; Flags: runhidden; Tasks: automariadb; StatusMsg: "جاري تهيئة قاعدة بيانات MariaDB المحلية (ng_financial)..."
-
 ; Launch Application on Finish
-Filename: "{app}\scripts\run-windows.bat"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\electron-runtime\electron.exe"; Parameters: """{app}\electron-app"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: files; Name: "{app}\data\ng_financial.db-shm"

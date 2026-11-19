@@ -5,19 +5,27 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
+    "mcp:readonly": "node server/mcp/readOnlyServer.js",
     "build": "cd client && npm run build",
     "test": "node server/tests/verify_scenario.js",
+    "test:registrations": "node server/tests/test_registration_leads.js",
+    "test:mariadb": "node server/tests/test_mariadb.js",
+    "test:marketing": "node server/tests/test_marketing.js",
+    "test:monthly-charges": "node server/tests/test_monthly_charges.js",
+    "test:mcp:readonly": "node server/tests/test_mcp_readonly.js",
     "test:void": "node server/tests/test_void.js",
     "desktop": "electron electron/main.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "mysql2": "^3.24.5"
+    "mysql2": "^3.24.5",
+    "zod": "^4.6.7"
   },
   "repository": {
     "type": "git",
@@ -29,5 +37,8 @@
   "bugs": {
     "url": "https://github.com/Abdo12-del/NG-Financial-System/issues"
   },
-  "homepage": "https://github.com/Abdo12-del/NG-Financial-System#readme"
+  "homepage": "https://github.com/Abdo12-del/NG-Financial-System#readme",
+  "devDependencies": {
+    "electron": "^44.5.0"
+  }
 }

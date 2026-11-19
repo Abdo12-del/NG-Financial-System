@@ -4,6 +4,41 @@ const db = require('../db/connection');
 const FinancialLedger = require('../ledger/financialLedger');
 const { authenticate, requireRole } = require('./auth');
 
+// Return the operating entries used to calculate net profit, in chronological order.
+router.get('/profit-history', authenticate, async (req, res) => {
+  try {
+    const entries = await db.query(`
+      SELECT
+        l.id as ledger_id,
+        l.entry_code,
+        l.entry_date,
+        l.ledger_category,
+        l.debit_amount,
+        l.credit_amount,
+        l.description,
+        l.is_operating_revenue,
+        l.is_operating_expense,
+        fa.name_ar as account_name,
+        crs.name as course_name,
+        c.name as cohort_name,
+        s.full_name as student_name
+      FROM financial_ledger l
+      LEFT JOIN financial_accounts fa ON l.financial_account_id = fa.id
+      LEFT JOIN cohorts c ON l.cohort_id = c.id
+      LEFT JOIN courses crs ON c.course_id = crs.id
+      LEFT JOIN students s ON l.student_id = s.id
+      WHERE l.is_voided = 0
+        AND (l.is_operating_revenue = 1 OR l.is_operating_expense = 1)
+      ORDER BY l.entry_date ASC, l.id ASC
+    `);
+
+    res.json({ entries });
+  } catch (err) {
+    console.error('Error fetching profit history:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // List transactions with full search & filtering
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -122,7 +157,7 @@ router.get('/', authenticate, async (req, res) => {
 // Add Revenue (Student Payment)
 router.post('/revenue', authenticate, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const { enrollmentId, studentId, cohortId, amount, paymentDate, paymentMethodId, referenceNo, notes } = req.body;
+    const { enrollmentId, studentId, cohortId, amount, paymentDate, paymentMethodId, referenceNo, notes, allowOverpayment } = req.body;
 
     let targetEnrollmentId = enrollmentId;
     if (!targetEnrollmentId && studentId && cohortId) {
@@ -153,6 +188,7 @@ router.post('/revenue', authenticate, requireRole(['admin', 'manager']), async (
       paymentMethodId: paymentMethodId || 1,
       referenceNo,
       notes,
+      allowOverpayment: allowOverpayment === true,
       userId: req.user.id,
       username: req.user.username
     });
@@ -191,6 +227,34 @@ router.post('/expense', authenticate, requireRole(['admin', 'manager']), async (
 });
 
 // Void / Reverse Transaction
+router.put('/edit', authenticate, requireRole(['admin', 'manager']), async (req, res) => {
+  try {
+    const { type, id, amount, transactionDate, paymentMethodId, referenceNo, notes, description, reason } = req.body;
+    if (!type || !id || !paymentMethodId || !reason) {
+      return res.status(400).json({ error: 'نوع المعاملة ورقمها وطريقة الدفع وسبب التعديل مطلوبة' });
+    }
+
+    const result = await FinancialLedger.editTransaction({
+      type,
+      id,
+      amount,
+      transactionDate,
+      paymentMethodId,
+      referenceNo,
+      notes,
+      description,
+      reason,
+      userId: req.user.id,
+      username: req.user.username
+    });
+
+    res.json({ success: true, message: 'تم تعديل المعاملة وتحديث الأرصدة بنجاح', data: result });
+  } catch (err) {
+    console.error('Error editing transaction:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/void', authenticate, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { type, id, reason } = req.body;

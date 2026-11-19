@@ -39,7 +39,7 @@ export default function VoidModal({ isOpen, onClose, onSuccess, targetTransactio
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="إلغاء وعكس المعاملة المالية (Void / Reverse)">
+    <Modal isOpen={isOpen} onClose={onClose} title="حذف آمن للمعاملة المالية">
       <form onSubmit={handleSubmit} className="space-y-4 text-slate-700">
         {error && (
           <div className="p-3 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-xl">
@@ -50,10 +50,9 @@ export default function VoidModal({ isOpen, onClose, onSuccess, targetTransactio
         <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="text-xs text-amber-900 leading-relaxed">
-            <p className="font-bold mb-1">تنبيه أمان ومطابقة محاسبية:</p>
+            <p className="font-bold mb-1">حذف مع حفظ سجل التدقيق:</p>
             <p>
-              لن يتم حذف هذه المعاملة نهائيًا لضمان سلامة التقارير وسجل التدقيق. بل سيتم وسمها كمعاملة ملغاة
-              وتوليد قيد عكسي يعيد الأرصدة إلى حالتها السابقة تمامًا.
+              سيتم إلغاء المعاملة وعكس أثرها على الأرصدة والتقارير. سيبقى القيد الأصلي محفوظًا كسجل ملغى، ولن يُمحى نهائيًا.
             </p>
           </div>
         </div>
@@ -89,7 +88,7 @@ export default function VoidModal({ isOpen, onClose, onSuccess, targetTransactio
             disabled={loading}
             className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
           >
-            {loading ? 'جاري الإلغاء...' : 'تأكيد إلغاء وعكس المعاملة'}
+            {loading ? 'جاري الحذف...' : 'تأكيد الحذف الآمن'}
           </button>
         </div>
       </form>

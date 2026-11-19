@@ -1,17 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileBarChart,
   Printer,
   Download,
-  Calendar,
-  DollarSign,
   TrendingUp,
   TrendingDown,
   ArrowDownLeft,
-  ArrowUpRight,
-  PieChart,
-  Layers,
-  Scale
+  ArrowUpRight
 } from 'lucide-react';
 import { apiRequest, formatCurrency, formatDate, exportToCsv } from '../utils/api';
 
@@ -20,12 +15,13 @@ export default function Reports() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reportDateLabel] = useState(() => new Date().toLocaleDateString('ar-DZ'));
 
   const [pnlData, setPnlData] = useState(null);
   const [cashFlowData, setCashFlowData] = useState(null);
   const [cohortsData, setCohortsData] = useState(null);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (startDate) params.append('startDate', startDate);
@@ -47,11 +43,11 @@ export default function Reports() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeReport, startDate, endDate]);
 
   useEffect(() => {
     fetchReport();
-  }, [activeReport, startDate, endDate]);
+  }, [fetchReport]);
 
   const handlePrint = () => {
     window.print();
@@ -85,7 +81,7 @@ export default function Reports() {
       ];
       exportToCsv(`cash_flow_statement_${Date.now()}`, headers, rows);
     } else if (activeReport === 'cohorts' && cohortsData) {
-      const headers = ['الفوج', 'الدورة', 'الأستاذ', 'عدد الطلاب', 'قيمة التسجيلات', 'المدفوع فعلياً', 'المتبقي', 'حصة الأستاذ', 'المصاريف المباشرة', 'صافي ربح الأكاديمية', 'هامش الربح'];
+      const headers = ['الفوج', 'الدورة', 'الأستاذ', 'عدد الطلاب', 'قيمة التسجيلات', 'المحصل فعلياً', 'المبلغ المستحق', 'حصة الأستاذ الفعلية', 'المصاريف المباشرة', 'الربح الفعلي', 'هامش الربح الفعلي', 'الربح المتوقع بعد التحصيل', 'هامش الربح المتوقع'];
       const rows = cohortsData.map(c => [
         c.cohort_name,
         c.course_name,
@@ -97,131 +93,161 @@ export default function Reports() {
         c.teacher_share,
         c.direct_expenses,
         c.academy_net_profit,
-        c.profit_margin
+        c.profit_margin,
+        c.expected_academy_net_profit,
+        c.expected_profit_margin
       ]);
       exportToCsv(`cohorts_profitability_${Date.now()}`, headers, rows);
     }
   };
 
+  const renderStatCard = (label, value, tone, hint) => {
+    const tones = {
+      emerald: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+      rose: 'border-rose-200 bg-rose-50 text-rose-900',
+      sky: 'border-sky-200 bg-sky-50 text-sky-900',
+      slate: 'border-slate-200 bg-slate-50 text-slate-900',
+      amber: 'border-amber-200 bg-amber-50 text-amber-900'
+    };
+
+    return (
+      <div className={`rounded-2xl border p-4 ${tones[tone] || tones.slate}`}>
+        <div className="text-[11px] font-bold text-slate-500">{label}</div>
+        <div className="mt-2 text-xl md:text-2xl font-black font-mono tracking-tight">{value}</div>
+        {hint && <div className="mt-1 text-[10px] font-semibold text-slate-500">{hint}</div>}
+      </div>
+    );
+  };
+
   return (
-    <div className="p-8 space-y-6">
-      {/* Top Header & Report Navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-4 no-print">
-        <div className="flex items-center gap-2 p-1 bg-slate-200/70 rounded-xl">
+    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-5">
+      <div className="no-print bg-white/90 backdrop-blur-sm border border-slate-200 rounded-3xl p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
+              <FileBarChart className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-lg font-black text-slate-900">تقارير المركز المالي</div>
+              <div className="text-xs text-slate-500">لوحة تحكم مالية واضحة وسريعة</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleExport}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              <span>تصدير Excel</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>طباعة PDF</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
           <button
             onClick={() => setActiveReport('pnl')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-              activeReport === 'pnl' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeReport === 'pnl' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            الأرباح والخسائر (P&L)
+            الأرباح والخسائر
           </button>
 
           <button
             onClick={() => setActiveReport('cashflow')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-              activeReport === 'cashflow' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeReport === 'cashflow' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            التدفق النقدي (Cash Flow)
+            التدفق النقدي
           </button>
 
           <button
             onClick={() => setActiveReport('cohorts')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-              activeReport === 'cohorts' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeReport === 'cohorts' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            ربحية الأفواج (Cohorts Profitability)
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-500" />
-            <span>تصدير Excel</span>
-          </button>
-
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            <span>طباعة التقرير (PDF)</span>
+            ربحية الأفواج
           </button>
         </div>
       </div>
 
-      {/* Date Filter Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4 no-print">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-slate-600">الفترة الزمنية:</span>
-          <div className="flex items-center gap-2 text-xs">
-            <span>من:</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
-            />
-            <span>إلى:</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
-            />
-            {(startDate || endDate) && (
-              <button
-                onClick={() => { setStartDate(''); setEndDate(''); }}
-                className="text-xs text-slate-400 hover:text-slate-700 px-2"
-              >
-                مسح التحديد
-              </button>
-            )}
+      <div className="bg-white p-4 md:p-5 rounded-3xl border border-slate-200 shadow-sm no-print">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-slate-600">الفترة الزمنية:</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span>من:</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-none"
+              />
+              <span>إلى:</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-[#38B6FF] focus:outline-none"
+              />
+              {(startDate || endDate) && (
+                <button
+                  onClick={() => { setStartDate(''); setEndDate(''); }}
+                  className="text-xs text-slate-400 hover:text-slate-700 px-2"
+                >
+                  مسح التحديد
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const now = new Date();
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+                setStartDate(startOfMonth);
+                setEndDate(endOfMonth);
+              }}
+              className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg font-medium cursor-pointer"
+            >
+              هذا الشهر
+            </button>
+            <button
+              onClick={() => {
+                const now = new Date();
+                const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
+                setStartDate(startOfYear);
+                setEndDate(now.toISOString().slice(0, 10));
+              }}
+              className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg font-medium cursor-pointer"
+            >
+              العام الحالي
+            </button>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              const now = new Date();
-              const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-              const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
-              setStartDate(startOfMonth);
-              setEndDate(endOfMonth);
-            }}
-            className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg font-medium cursor-pointer"
-          >
-            هذا الشهر
-          </button>
-          <button
-            onClick={() => {
-              const now = new Date();
-              const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
-              setStartDate(startOfYear);
-              setEndDate(now.toISOString().slice(0, 10));
-            }}
-            className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg font-medium cursor-pointer"
-          >
-            العام الحالي
-          </button>
-        </div>
       </div>
 
-      {/* Report Container (Formatted for screen and clean PDF printing) */}
-      <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm print:shadow-none print:border-none print:p-0">
-        {/* Printable Header */}
-        <div className="border-b border-slate-200 pb-6 mb-6 flex items-center justify-between">
+      <div className="bg-white p-5 md:p-8 rounded-3xl border border-slate-200 shadow-sm print:shadow-none print:border-none print:p-0">
+        <div className="border-b border-slate-200 pb-5 mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between print:block">
           <div>
             <h2 className="text-2xl font-black text-slate-900">NG Academy - المركز المالي</h2>
             <p className="text-sm font-bold text-[#0BAAFF] mt-1">
-              {activeReport === 'pnl' && 'قائمة الأرباح والخسائر التشغيلية (Profit & Loss Statement)'}
-              {activeReport === 'cashflow' && 'قائمة التدفقات النقدية (Cash Flow Statement)'}
-              {activeReport === 'cohorts' && 'تقرير ربحية وهوامش الأفواج التدريبية (Cohort Margin Analysis)'}
+              {activeReport === 'pnl' && 'قائمة الأرباح والخسائر التشغيلية'}
+              {activeReport === 'cashflow' && 'قائمة التدفقات النقدية'}
+              {activeReport === 'cohorts' && 'تقرير ربحية الأفواج التدريبية'}
             </p>
             <p className="text-xs text-slate-400 mt-1">
               الفترة: {startDate ? formatDate(startDate) : 'البداية'} حتى {endDate ? formatDate(endDate) : 'اليوم'}
@@ -230,7 +256,7 @@ export default function Reports() {
           <div className="text-left font-mono text-xs text-slate-400">
             <div className="text-lg font-black text-slate-900 tracking-wider">NG ACADEMY</div>
             <div>نظام مالي محلي معتمد</div>
-            <div>تاريخ الاستخراج: {new Date().toLocaleDateString('ar-DZ')}</div>
+            <div>تاريخ الاستخراج: {reportDateLabel}</div>
           </div>
         </div>
 
@@ -241,212 +267,215 @@ export default function Reports() {
           </div>
         ) : (
           <>
-            {/* 1. Profit & Loss Statement */}
             {activeReport === 'pnl' && pnlData && (
               <div className="space-y-6">
-                {/* Revenue Section */}
-                <div>
-                  <div className="flex items-center justify-between pb-2 border-b-2 border-emerald-500 mb-3">
-                    <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-emerald-600" />
-                      الإيرادات التشغيلية (Operating Revenue)
-                    </span>
-                    <span className="font-mono text-xs text-slate-400">حسب الدورات</span>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {renderStatCard('إجمالي الإيرادات', formatCurrency(pnlData.revenue.total), 'emerald', 'إيرادات التشغيل')}
+                  {renderStatCard('إجمالي المصروفات', formatCurrency(pnlData.expenses.total), 'rose', 'مصروفات التشغيل')}
+                  {renderStatCard('صافي الربح', formatCurrency(pnlData.netProfit), 'sky', `هامش: ${pnlData.profitMargin}`)}
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-emerald-200 mb-3">
+                      <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-600" />
+                        الإيرادات التشغيلية
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-500">حسب الدورات</span>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      {pnlData.revenue.items.length === 0 ? (
+                        <p className="text-slate-400 py-2">لا توجد إيرادات مسجلة خلال هذه الفترة</p>
+                      ) : (
+                        pnlData.revenue.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between py-1.5 border-b border-slate-100">
+                            <span className="text-slate-700 font-medium">{item.item_name}</span>
+                            <span className="font-bold text-slate-900 font-mono">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))
+                      )}
+                      <div className="flex justify-between pt-3 font-black text-sm text-emerald-700 bg-emerald-100/50 p-3 rounded-xl border border-emerald-200">
+                        <span>الإجمالي:</span>
+                        <span className="font-mono">{formatCurrency(pnlData.revenue.total)}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2 text-xs">
-                    {pnlData.revenue.items.length === 0 ? (
-                      <p className="text-slate-400 py-2">لا توجد إيرادات مسجلة خلال هذه الفترة</p>
-                    ) : (
-                      pnlData.revenue.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between py-1.5 border-b border-slate-100">
-                          <span className="text-slate-700 font-medium">{item.item_name}</span>
-                          <span className="font-bold text-slate-900 font-mono">{formatCurrency(item.amount)}</span>
-                        </div>
-                      ))
-                    )}
-                    <div className="flex justify-between pt-3 font-black text-sm text-emerald-700 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100">
-                      <span>إجمالي الإيرادات التشغيلية:</span>
-                      <span className="font-mono">{formatCurrency(pnlData.revenue.total)}</span>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-rose-200 mb-3">
+                      <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <TrendingDown className="w-4 h-4 text-rose-600" />
+                        المصروفات التشغيلية
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-500">حسب التصنيفات</span>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      {pnlData.expenses.items.length === 0 ? (
+                        <p className="text-slate-400 py-2">لا توجد مصروفات مسجلة خلال هذه الفترة</p>
+                      ) : (
+                        pnlData.expenses.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between py-1.5 border-b border-slate-100">
+                            <span className="text-slate-700 font-medium">{item.item_name}</span>
+                            <span className="font-bold text-slate-900 font-mono">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))
+                      )}
+                      <div className="flex justify-between pt-3 font-black text-sm text-rose-700 bg-rose-100/50 p-3 rounded-xl border border-rose-200">
+                        <span>الإجمالي:</span>
+                        <span className="font-mono">{formatCurrency(pnlData.expenses.total)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Operating Expenses Section */}
-                <div>
-                  <div className="flex items-center justify-between pb-2 border-b-2 border-rose-500 mb-3">
-                    <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                      <TrendingDown className="w-4 h-4 text-rose-600" />
-                      المصروفات التشغيلية (Operating Expenses)
-                    </span>
-                    <span className="font-mono text-xs text-slate-400">حسب التصنيفات المعتمدة</span>
-                  </div>
-                  <div className="space-y-2 text-xs">
-                    {pnlData.expenses.items.length === 0 ? (
-                      <p className="text-slate-400 py-2">لا توجد مصروفات مسجلة خلال هذه الفترة</p>
-                    ) : (
-                      pnlData.expenses.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between py-1.5 border-b border-slate-100">
-                          <span className="text-slate-700 font-medium">{item.item_name}</span>
-                          <span className="font-bold text-slate-900 font-mono">{formatCurrency(item.amount)}</span>
-                        </div>
-                      ))
-                    )}
-                    <div className="flex justify-between pt-3 font-black text-sm text-rose-700 bg-rose-50/60 p-3 rounded-xl border border-rose-100">
-                      <span>إجمالي المصروفات التشغيلية:</span>
-                      <span className="font-mono">{formatCurrency(pnlData.expenses.total)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Net Profit Summary Box */}
                 <div className="p-5 rounded-2xl border-2 border-slate-900 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <h3 className="text-lg font-black">صافي الربح التشغيلي (Net Operating Profit)</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      الإيرادات التشغيلية - المصروفات التشغيلية (مفصول تماماً عن سحوبات وضخ المالك)
-                    </p>
+                    <h3 className="text-lg font-black">صافي الربح التشغيلي</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">الإيرادات التشغيلية - المصروفات التشغيلية</p>
                   </div>
                   <div className="text-left font-mono">
-                    <div className="text-3xl font-black text-[#38B6FF]">
-                      {formatCurrency(pnlData.netProfit)}
-                    </div>
-                    <div className="text-xs text-slate-300 font-semibold mt-1">
-                      هامش الربح التشغيلي: {pnlData.profitMargin}
-                    </div>
+                    <div className="text-3xl font-black text-[#38B6FF]">{formatCurrency(pnlData.netProfit)}</div>
+                    <div className="text-xs text-slate-300 font-semibold mt-1">هامش الربح التشغيلي: {pnlData.profitMargin}</div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 2. Cash Flow Statement */}
             {activeReport === 'cashflow' && cashFlowData && (
               <div className="space-y-6 text-xs">
-                {/* Opening Balance */}
-                <div className="p-4 bg-slate-100 rounded-2xl flex items-center justify-between font-bold text-slate-800">
-                  <span className="text-sm">الرصيد النقدي الافتتاحي (Opening Cash Balance):</span>
-                  <span className="text-base font-mono">{formatCurrency(cashFlowData.openingBalance)}</span>
+                <div className="grid gap-4 md:grid-cols-4">
+                  {renderStatCard('الرصيد الافتتاحي', formatCurrency(cashFlowData.openingBalance), 'slate', 'مفتاح التقرير')}
+                  {renderStatCard('إجمالي الوارد', formatCurrency(cashFlowData.cashIn.total), 'emerald', 'الوارد النقدي')}
+                  {renderStatCard('إجمالي الخارج', formatCurrency(cashFlowData.cashOut.total), 'rose', 'الخارج النقدي')}
+                  {renderStatCard('الرصيد الختامي', formatCurrency(cashFlowData.closingBalance), 'sky', 'حالة الصندوق')}
                 </div>
 
-                {/* Cash In */}
-                <div>
-                  <h4 className="font-bold text-emerald-800 text-sm mb-2 pb-1 border-b border-emerald-300 flex items-center gap-1.5">
-                    <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
-                    التدفقات النقدية الداخلة (Cash Inflow)
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between py-1.5 border-b border-slate-100">
-                      <span>متحصلات اشتراكات ورسوم الطلاب (Operating Cash In):</span>
-                      <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashIn.studentPayments)}</strong>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="font-bold text-emerald-800 text-sm mb-3 pb-2 border-b border-emerald-200 flex items-center gap-1.5">
+                      <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                      التدفقات النقدية الداخلة
+                    </h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between py-1.5 border-b border-slate-100">
+                        <span>متحصلات الطلاب</span>
+                        <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashIn.studentPayments)}</strong>
+                      </div>
+                      <div className="flex justify-between py-1.5 border-b border-slate-100 bg-sky-50/60 px-2 rounded">
+                        <span className="font-semibold text-sky-900">ضخ المالك</span>
+                        <strong className="font-mono text-sky-800">{formatCurrency(cashFlowData.cashIn.ownerContributions)}</strong>
+                      </div>
+                      <div className="flex justify-between py-1.5 border-b border-slate-100">
+                        <span>إيرادات أخرى</span>
+                        <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashIn.otherIncome)}</strong>
+                      </div>
+                      <div className="flex justify-between font-black text-sm text-emerald-700 pt-2">
+                        <span>إجمالي الداخل:</span>
+                        <span className="font-mono">+{formatCurrency(cashFlowData.cashIn.total)}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between py-1.5 border-b border-slate-100 bg-sky-50/40 px-2 rounded">
-                      <span className="font-semibold text-sky-900">ضخ سيولة من المالك (Owner Contributions - Financing Cash In):</span>
-                      <strong className="font-mono text-sky-800">{formatCurrency(cashFlowData.cashIn.ownerContributions)}</strong>
-                    </div>
-                    <div className="flex justify-between py-1.5 border-b border-slate-100">
-                      <span>إيرادات ومقبوضات نقدية أخرى:</span>
-                      <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashIn.otherIncome)}</strong>
-                    </div>
-                    <div className="flex justify-between font-black text-sm text-emerald-700 pt-2">
-                      <span>إجمالي التدفقات النقدية الداخلة:</span>
-                      <span className="font-mono">+{formatCurrency(cashFlowData.cashIn.total)}</span>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="font-bold text-rose-800 text-sm mb-3 pb-2 border-b border-rose-200 flex items-center gap-1.5">
+                      <ArrowUpRight className="w-4 h-4 text-rose-600" />
+                      التدفقات النقدية الخارجة
+                    </h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between py-1.5 border-b border-slate-100">
+                        <span>أجور الأساتذة</span>
+                        <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashOut.teacherPayments)}</strong>
+                      </div>
+                      <div className="flex justify-between py-1.5 border-b border-slate-100">
+                        <span>مصروفات تشغيلية</span>
+                        <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashOut.operatingExpenses)}</strong>
+                      </div>
+                      <div className="flex justify-between py-1.5 border-b border-slate-100 bg-amber-50/60 px-2 rounded">
+                        <span className="font-semibold text-amber-900">سحب المالك</span>
+                        <strong className="font-mono text-amber-800">{formatCurrency(cashFlowData.cashOut.ownerWithdrawals)}</strong>
+                      </div>
+                      <div className="flex justify-between font-black text-sm text-rose-700 pt-2">
+                        <span>إجمالي الخارج:</span>
+                        <span className="font-mono">-{formatCurrency(cashFlowData.cashOut.total)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Cash Out */}
-                <div>
-                  <h4 className="font-bold text-rose-800 text-sm mb-2 pb-1 border-b border-rose-300 flex items-center gap-1.5">
-                    <ArrowUpRight className="w-4 h-4 text-rose-600" />
-                    التدفقات النقدية الخارجة (Cash Outflow)
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between py-1.5 border-b border-slate-100">
-                      <span>مدفوعات أجور الأساتذة الفعلية (Teacher Wage Payments):</span>
-                      <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashOut.teacherPayments)}</strong>
-                    </div>
-                    <div className="flex justify-between py-1.5 border-b border-slate-100">
-                      <span>المصروفات التشغيلية والإعلانات والخدمات (Operating Cash Out):</span>
-                      <strong className="font-mono text-slate-900">{formatCurrency(cashFlowData.cashOut.operatingExpenses)}</strong>
-                    </div>
-                    <div className="flex justify-between py-1.5 border-b border-slate-100 bg-amber-50/40 px-2 rounded">
-                      <span className="font-semibold text-amber-900">سحوبات شخصية للمالك (Owner Withdrawals - Financing Cash Out):</span>
-                      <strong className="font-mono text-amber-800">{formatCurrency(cashFlowData.cashOut.ownerWithdrawals)}</strong>
-                    </div>
-                    <div className="flex justify-between font-black text-sm text-rose-700 pt-2">
-                      <span>إجمالي التدفقات النقدية الخارجة:</span>
-                      <span className="font-mono">-{formatCurrency(cashFlowData.cashOut.total)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Net Flow & Closing Balance */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t-2 border-slate-200">
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                    <span className="text-slate-500 block font-bold mb-1">صافي التدفق النقدي (Net Cash Flow):</span>
-                    <span className={`text-xl font-black font-mono ${
-                      cashFlowData.netCashFlow >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                    }`}>
+                    <span className="text-slate-500 block font-bold mb-1">صافي التدفق النقدي:</span>
+                    <span className={`text-xl font-black font-mono ${cashFlowData.netCashFlow >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                       {formatCurrency(cashFlowData.netCashFlow)}
                     </span>
                     <p className="text-[11px] text-slate-400 mt-1">التدفقات الداخلة - التدفقات الخارجة</p>
                   </div>
 
                   <div className="p-4 bg-sky-50 rounded-2xl border border-sky-200">
-                    <span className="text-[#0BAAFF] block font-bold mb-1">الرصيد النقدي الختامي للصندوق (Closing Cash Balance):</span>
-                    <span className="text-xl font-black text-slate-900 font-mono">
-                      {formatCurrency(cashFlowData.closingBalance)}
-                    </span>
-                    <p className="text-[11px] text-slate-500 mt-1">الرصيد الافتتاحي + صافي التدفق النقدي</p>
+                    <span className="text-[#0BAAFF] block font-bold mb-1">الرصيد الختامي:</span>
+                    <span className="text-xl font-black text-slate-900 font-mono">{formatCurrency(cashFlowData.closingBalance)}</span>
+                    <p className="text-[11px] text-slate-500 mt-1">الرصيد الافتتاحي + صافي التدفق</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 3. Cohorts Profitability */}
             {activeReport === 'cohorts' && cohortsData && (
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
-                      <th className="p-3">الفوج</th>
-                      <th className="p-3">الدورة</th>
-                      <th className="p-3">الأستاذ</th>
-                      <th className="p-3 text-center">الطلاب</th>
-                      <th className="p-3">المحصل (Revenue)</th>
-                      <th className="p-3">حصة الأستاذ</th>
-                      <th className="p-3">المصاريف المباشرة</th>
-                      <th className="p-3">صافي ربح الأكاديمية</th>
-                      <th className="p-3 text-center">هامش الربح</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {cohortsData.length === 0 ? (
-                      <tr>
-                        <td colSpan="9" className="text-center py-8 text-slate-400">
-                          لا توجد بيانات أفواج
-                        </td>
-                      </tr>
-                    ) : (
-                      cohortsData.map((c, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="p-3 font-bold text-slate-900">{c.cohort_name}</td>
-                          <td className="p-3 text-slate-600">{c.course_name}</td>
-                          <td className="p-3 text-slate-600">{c.teacher_name}</td>
-                          <td className="p-3 text-center font-semibold">{c.student_count}</td>
-                          <td className="p-3 font-bold text-emerald-600">{formatCurrency(c.total_collected)}</td>
-                          <td className="p-3 font-semibold text-rose-600">{formatCurrency(c.teacher_share)}</td>
-                          <td className="p-3 text-slate-600">{formatCurrency(c.direct_expenses)}</td>
-                          <td className="p-3 font-black text-slate-900">
-                            {formatCurrency(c.academy_net_profit)}
-                          </td>
-                          <td className="p-3 text-center font-bold text-[#0BAAFF]">
-                            {c.profit_margin}
-                          </td>
+              <div className="space-y-5 text-xs">
+                <div className="grid gap-4 md:grid-cols-4">
+                  {renderStatCard('عدد الطلاب', cohortsData.reduce((sum, c) => sum + Number(c.student_count || 0), 0).toString(), 'slate', 'إجمالي الطلاب')}
+                  {renderStatCard('المحصل فعلياً', formatCurrency(cohortsData.reduce((sum, c) => sum + Number(c.total_collected || 0), 0)), 'emerald', 'مجموع المقبوضات')}
+                  {renderStatCard('الربح الفعلي', formatCurrency(cohortsData.reduce((sum, c) => sum + Number(c.academy_net_profit || 0), 0)), 'sky', 'بعد المصاريف')}
+                  {renderStatCard('الهامش المتوسط', `${(cohortsData.reduce((sum, c) => sum + Number(c.profit_margin?.replace('%', '') || 0), 0) / (cohortsData.length || 1)).toFixed(1)}%`, 'amber', 'على مستوى الأفواج')}
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
+                          <th className="p-3">الفوج</th>
+                          <th className="p-3">الدورة</th>
+                          <th className="p-3">الأستاذ</th>
+                          <th className="p-3 text-center">الطلاب</th>
+                          <th className="p-3">المحصل</th>
+                          <th className="p-3">المستحق</th>
+                          <th className="p-3">حصة الأستاذ</th>
+                          <th className="p-3">المصاريف</th>
+                          <th className="p-3">الربح</th>
+                          <th className="p-3 text-center">هامش</th>
+                          <th className="p-3">متوقع</th>
+                          <th className="p-3 text-center">هامش متوقع</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {cohortsData.length === 0 ? (
+                          <tr>
+                            <td colSpan="12" className="text-center py-8 text-slate-400">لا توجد بيانات أفواج</td>
+                          </tr>
+                        ) : (
+                          cohortsData.map((c, i) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                              <td className="p-3 font-bold text-slate-900">{c.cohort_name}</td>
+                              <td className="p-3 text-slate-600">{c.course_name}</td>
+                              <td className="p-3 text-slate-600">{c.teacher_name}</td>
+                              <td className="p-3 text-center font-semibold">{c.student_count}</td>
+                              <td className="p-3 font-bold text-emerald-600">{formatCurrency(c.total_collected)}</td>
+                              <td className="p-3 font-bold text-amber-600">{formatCurrency(c.total_outstanding)}</td>
+                              <td className="p-3 font-semibold text-rose-600">{formatCurrency(c.teacher_share)}</td>
+                              <td className="p-3 text-slate-600">{formatCurrency(c.direct_expenses)}</td>
+                              <td className="p-3 font-black text-slate-900">{formatCurrency(c.academy_net_profit)}</td>
+                              <td className="p-3 text-center font-bold text-[#0BAAFF]">{c.profit_margin}</td>
+                              <td className="p-3 font-black text-emerald-700">{formatCurrency(c.expected_academy_net_profit)}</td>
+                              <td className="p-3 text-center font-bold text-emerald-700">{c.expected_profit_margin}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </>

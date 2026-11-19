@@ -12,6 +12,7 @@ export default function AddRevenueModal({ isOpen, onClose, onSuccess, preselecte
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMethodId, setPaymentMethodId] = useState(1);
+  const [allowOverpayment, setAllowOverpayment] = useState(false);
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -21,7 +22,15 @@ export default function AddRevenueModal({ isOpen, onClose, onSuccess, preselecte
   useEffect(() => {
     if (isOpen) {
       setError('');
-      apiRequest('/students').then(res => setStudents(res.students || []));
+      apiRequest('/students').then(res => {
+        const uniqueStudents = new Map();
+        (res.students || []).forEach(student => {
+          if (!uniqueStudents.has(student.student_id)) {
+            uniqueStudents.set(student.student_id, student);
+          }
+        });
+        setStudents(Array.from(uniqueStudents.values()));
+      });
       apiRequest('/cohorts/cohorts').then(res => setCohorts(res.cohorts || []));
       apiRequest('/settings').then(res => {
         setPaymentMethods(res.paymentMethods || []);
@@ -51,6 +60,7 @@ export default function AddRevenueModal({ isOpen, onClose, onSuccess, preselecte
           amount: parseFloat(amount),
           paymentDate,
           paymentMethodId: parseInt(paymentMethodId),
+          allowOverpayment,
           referenceNo,
           notes
         })
@@ -123,6 +133,15 @@ export default function AddRevenueModal({ isOpen, onClose, onSuccess, preselecte
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:bg-white focus:border-[#38B6FF] focus:outline-hidden"
             />
             <p className="text-[11px] text-slate-500 mt-1">يدعم الدفع الكامل أو الجزئي</p>
+            <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={allowOverpayment}
+                onChange={(e) => setAllowOverpayment(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-emerald-600"
+              />
+              <span>السماح بتحصيل مبلغ يتجاوز المتبقي، مثل دفع قسطين معًا أو الدفع مقدمًا</span>
+            </label>
           </div>
 
           <div>

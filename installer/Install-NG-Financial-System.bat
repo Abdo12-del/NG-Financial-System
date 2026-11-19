@@ -19,6 +19,14 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
+set "NODE_EXE="
+for /f "delims=" %%N in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%N"
+if not defined NODE_EXE (
+    echo [خطأ] يلزم تثبيت Node.js على جهاز التثبيت لتضمين وقت التشغيل.
+    pause
+    exit /b 1
+)
+
 :: 2. Set Installation Directory
 set "INSTALL_DIR=C:\Program Files\NG Financial System"
 echo [1/5] مسار التثبيت الافتراضي:
@@ -36,39 +44,27 @@ mkdir "!INSTALL_DIR!\database" 2>nul
 mkdir "!INSTALL_DIR!\server" 2>nul
 mkdir "!INSTALL_DIR!\client\dist" 2>nul
 mkdir "!INSTALL_DIR!\scripts" 2>nul
+mkdir "!INSTALL_DIR!\mariadb-10.11.7-winx64" 2>nul
+mkdir "!INSTALL_DIR!\runtime" 2>nul
 mkdir "!INSTALL_DIR!\data" 2>nul
+icacls "!INSTALL_DIR!\data" /grant "*S-1-5-32-545:(OI)(CI)M" >nul
 
 xcopy "%~dp0..\server" "!INSTALL_DIR!\server" /E /I /Y /Q >nul
 xcopy "%~dp0..\client\dist" "!INSTALL_DIR!\client\dist" /E /I /Y /Q >nul
 xcopy "%~dp0..\database" "!INSTALL_DIR!\database" /E /I /Y /Q >nul
 xcopy "%~dp0..\scripts" "!INSTALL_DIR!\scripts" /E /I /Y /Q >nul
+xcopy "%~dp0..\mariadb-10.11.7-winx64" "!INSTALL_DIR!\mariadb-10.11.7-winx64" /E /I /Y /Q >nul
 xcopy "%~dp0..\node_modules" "!INSTALL_DIR!\node_modules" /E /I /Y /Q >nul
 copy /y "%~dp0..\package.json" "!INSTALL_DIR!\" >nul
+copy /y "!NODE_EXE!" "!INSTALL_DIR!\runtime\node.exe" >nul
 copy /y "%~dp0..\client\public\logo.svg" "!INSTALL_DIR!\client\dist\" >nul
 
 echo [✓] تم نسخ ملفات النظام بنجاح.
 echo.
 
-:: 3. Configure MariaDB 10.11.7 Local Database
-echo [3/5] فحص وتهيئة قاعدة بيانات MariaDB 10.11.7 المحلية...
-where mysql >nul 2>&1
-if %errorlevel% equ 0 (
-    echo     تم العثور على خادم MySQL / MariaDB محليًا.
-    set /p MARIADB_PASS="أدخل كلمة مرور مستخدم root لخادم MariaDB (اضغط Enter إذا لم توجد كلمة مرور): "
-    
-    set "PASS_PARAM="
-    if not "!MARIADB_PASS!"=="" set "PASS_PARAM=-p!MARIADB_PASS!"
-
-    echo     جاري إنشاء قاعدة البيانات ng_financial واستيراد الجداول...
-    mysql -u root !PASS_PARAM! -e "CREATE DATABASE IF NOT EXISTS ng_financial CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>nul
-    mysql -u root !PASS_PARAM! ng_financial < "!INSTALL_DIR!\database\schema.sql" 2>nul
-    mysql -u root !PASS_PARAM! ng_financial < "!INSTALL_DIR!\database\seed.sql" 2>nul
-    echo     [✓] تم تهيئة قاعدة بيانات MariaDB بنجاح تام!
-) else (
-    echo     [ملاحظة] لم يتم العثور على أمر mysql في مسار النظام (PATH).
-    echo     سيعمل النظام فورياً عبر محرك التخزين المحلي المدمج (SQLite)
-    echo     ويمكنك إدخال بيانات MariaDB 10.11.7 في أي وقت لاحقاً من شاشة الإعدادات.
-)
+:: 3. The application provisions bundled MariaDB and migrates SQLite data on first launch.
+echo [3/5] سيُهيئ التطبيق MariaDB المحلية تلقائياً عند أول تشغيل.
+echo     سيتم نقل بيانات SQLite الموجودة مع الاحتفاظ بملفها الأصلي.
 echo.
 
 :: 4. Create Desktop & Start Menu Shortcuts using VBScript
@@ -123,7 +119,8 @@ echo [تهانينا!] اكتمل تثبيت نظام NG Financial System بنج
 echo ==============================================================================
 echo.
 echo المسار: !INSTALL_DIR!
-echo قاعدة البيانات: MariaDB 10.11.7 (ng_financial)
+echo قاعدة البيانات الافتراضية: MariaDB محلية مرفقة
+echo بيانات SQLite السابقة تُنقل تلقائياً عند أول تشغيل
 echo الحساب الافتراضي للتسجيل:
 echo    اسم المستخدم: admin
 echo    كلمة المرور: admin123
